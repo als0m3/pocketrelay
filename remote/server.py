@@ -18,7 +18,7 @@ from . import accounts, admin, codex_backend, history
 from .openai_compat import OAIError, oai_error_handler, router as openai_router
 from starlette.middleware.sessions import SessionMiddleware
 
-from .config import ALLOWED_HOSTS, CLAUDE_BIN, DATA, ENABLE_SESSIONS, SESSION_SECRET, STATIC, TOKEN
+from .config import ALLOWED_HOSTS, CLAUDE_BIN, DATA, ENABLE_DOCS, ENABLE_SESSIONS, SESSION_SECRET, STATIC, TOKEN
 from .sessions import EFFORTS, PERMISSION_MODES, Manager, child_env
 
 manager: Manager
@@ -34,6 +34,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CustomRemote", version="0.1.0", lifespan=lifespan,
+              docs_url="/docs" if ENABLE_DOCS else None, redoc_url=None,
+              openapi_url="/openapi.json" if ENABLE_DOCS else None,
               description="Control the Claude Code subscription CLI over HTTP. Authentication: `Authorization: Bearer <token>`.")
 
 
@@ -48,7 +50,16 @@ async def guard(request: Request, call_next):
     host = (request.headers.get("host") or "").rsplit(":", 1)[0]
     if host not in ALLOWED_HOSTS and request.url.path != "/healthz":  # Kubernetes probes use the pod IP.
         return JSONResponse({"detail": f"Host rejected : {host}"}, status_code=403)
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    if request.url.path.startswith("/admin"):
+        response.headers.setdefault("Content-Security-Policy",
+                                    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                                    "frame-ancestors 'none'; form-action 'self' https:")
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 
 def auth(request: Request):

@@ -72,7 +72,9 @@ async function showLogin() {
   $("#login").hidden = false;
   const cfg = await fetch("/admin/auth/config").then(r => r.json()).catch(() => ({}));
   $("#oidc-btn").hidden = !cfg.oidc;
-  $("#or").hidden = !cfg.oidc;
+  $("#or").hidden = !cfg.oidc || cfg.token_login === false;
+  $("#master").closest("label").hidden = cfg.token_login === false;
+  $("#master-btn").hidden = cfg.token_login === false;
   const denied = new URLSearchParams(location.search).get("denied");
   if (denied) { $("#denied").hidden = false; $("#denied").textContent = `Access denied for ${denied}: this account is not an administrator.`; }
 }

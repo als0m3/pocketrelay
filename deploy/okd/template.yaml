@@ -145,6 +145,7 @@ objects:
                 - {name: ENABLE_EVALUATION_ARENA_MODELS, value: "False"}
                 # OIDC-only login; ACCESS_ROLE grants access, ADMIN_ROLE grants administration.
                 - {name: ENABLE_OAUTH_SIGNUP, value: "True"}
+                - {name: ENABLE_SIGNUP, value: "False"}
                 - {name: ENABLE_OAUTH_ROLE_MANAGEMENT, value: "True"}
                 - {name: OAUTH_ROLES_CLAIM, value: "${ROLES_CLAIM}"}
                 - {name: OAUTH_ALLOWED_ROLES, value: "${ACCESS_ROLE}"}

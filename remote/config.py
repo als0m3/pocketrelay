@@ -22,6 +22,11 @@ PUBLIC_URL = os.environ.get("REMOTE_PUBLIC_URL", "").rstrip("/")
 if PUBLIC_URL:
     ALLOWED_HOSTS.add(PUBLIC_URL.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0])
 
+# Public host behind the VPS: sensitive routes are restricted.
+PUBLIC_HOST = PUBLIC_URL.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0] if PUBLIC_URL else ""
+# Interactive API documentation defaults to local-only availability.
+ENABLE_DOCS = os.environ.get("REMOTE_ENABLE_DOCS", "0" if PUBLIC_URL else "1") == "1"
+
 CLAUDE_BIN = (
     os.environ.get("CLAUDE_BIN")
     or shutil.which("claude")

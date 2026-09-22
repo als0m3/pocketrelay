@@ -13,8 +13,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
 from . import accounts, codex_backend, keys, openai_compat
-from .config import (ADMIN_EMAILS, ADMIN_GROUPS, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, PUBLIC_URL, STATIC,
-                     TOKEN)
+from .config import (ADMIN_EMAILS, ADMIN_GROUPS, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, PUBLIC_HOST, PUBLIC_URL,
+                     STATIC, TOKEN)
 
 router = APIRouter(prefix="/admin")
 
@@ -73,9 +73,20 @@ async def page():
     return FileResponse(STATIC / "admin.html")
 
 
+def via_public_proxy(request: Request) -> bool:
+    """Identify the public VPS proxy by its public X-Forwarded-Host."""
+    fwd = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip().split(":")[0]
+    return bool(PUBLIC_HOST) and fwd == PUBLIC_HOST
+
+
+def token_login_allowed(request: Request) -> bool:
+    # With SSO, master-token recovery is internal-only through NetBird.
+    return not (oauth and via_public_proxy(request))
+
+
 @router.get("/auth/config")
 async def auth_config(request: Request):
-    return {"oidc": bool(oauth), "user": current_user(request)}
+    return {"oidc": bool(oauth), "token_login": token_login_allowed(request), "user": current_user(request)}
 
 
 @router.get("/auth/login")
@@ -103,6 +114,8 @@ async def oidc_callback(request: Request):
 
 @router.post("/auth/token")
 async def token_login(request: Request):
+    if not token_login_allowed(request):
+        raise HTTPException(403, "Token login is disabled from the Internet; use SSO.")
     body = await request.json()
     if not secrets.compare_digest(str(body.get("token", "")), TOKEN):
         raise HTTPException(401, "Invalid master token")

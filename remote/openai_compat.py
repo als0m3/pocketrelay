@@ -209,9 +209,34 @@ async def _codex(system, blocks, model, effort, schema, acc):
 
 # ---------- content conversion ----------
 
+def _check_public_url(url: str):
+    """Reject internal network URLs to prevent SSRF from the pod into the cluster."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise OAIError(400, "Only http(s) image URLs are allowed.", param="image_url")
+    try:
+        infos = socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80))
+    except socket.gaierror:
+        raise OAIError(400, f"Cannot resolve {u.hostname}.", param="image_url")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise OAIError(400, "Image URL points to a non-public address.", param="image_url")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_public_url(newurl)  # Redirects must not bypass validation.
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _fetch_image(url: str) -> dict:
+    _check_public_url(url)
     req = urllib.request.Request(url, headers={"User-Agent": "CustomRemote"})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.build_opener(_NoRedirect).open(req, timeout=20) as r:
         data = r.read(20 * 1024 * 1024 + 1)
         mt = r.headers.get_content_type()
     if len(data) > 20 * 1024 * 1024:
