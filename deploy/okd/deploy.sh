@@ -4,6 +4,8 @@
 #   OIDC_CLIENT_SECRET=… GHCR_PULL_TOKEN=… ./deploy/okd/deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")"
+# Local secrets (not tracked): GHCR_TOKEN, GHCR_PULL_TOKEN, OIDC_CLIENT_SECRET
+[ -f secrets.env ] && source secrets.env
 CONTEXT="${CONTEXT:-default/api-cluster-example-test:6443/kube:admin}"
 NS="${NAMESPACE:-custom-remote}"
 oc_() { oc --context "$CONTEXT" -n "$NS" "$@"; }

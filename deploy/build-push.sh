@@ -4,6 +4,8 @@
 #   GHCR_TOKEN=<PAT-with-write:packages> ./deploy/build-push.sh [tag]
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Local secrets (not tracked): GHCR_TOKEN, GHCR_PULL_TOKEN, OIDC_CLIENT_SECRET
+[ -f deploy/okd/secrets.env ] && source deploy/okd/secrets.env
 : "${GHCR_TOKEN:?Missing GHCR_TOKEN (PAT with write:packages scope)}"
 USER_NAME=als0m3
 REPO="ghcr.io/${USER_NAME}/custom-remote"
