@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23d97757'/><text x='16' y='22' font-size='17' text-anchor='middle' fill='white' font-family='monospace'>&gt;_</text></svg>">
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  body { overflow-y: auto; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 60px; }
+  header.top { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  header.top h1 { font-size: 18px; margin: 0; flex: 1; }
+  .logo { background: var(--accent); color: #fff; font-family: var(--mono); border-radius: 6px; padding: 0 6px; font-size: 13px; }
+  section.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  section.card h2 { font-size: 15px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row input { flex: 1; min-width: 200px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  td.mono { font-family: var(--mono); font-size: 12px; }
+  tr.revoked td { color: var(--muted); text-decoration: line-through; }
+  tr.revoked td:last-child { text-decoration: none; }
+  .newkey { background: color-mix(in srgb, var(--green) 12%, var(--card)); border: 1px solid var(--green); border-radius: 8px; padding: 10px 12px; margin-top: 12px; }
+  .newkey code { display: block; font-size: 13px; word-break: break-all; margin: 6px 0; user-select: all; }
+  .ok { color: var(--green); } .bad { color: var(--red); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stat { background: var(--panel); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; background: var(--green); }
+  .bar i.mid { background: var(--amber); } .bar i.high { background: var(--red); }
+  #login { max-width: 380px; margin: 14vh auto; text-align: center; }
+  #login .card { text-align: left; }
+  pre.snippet { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-size: 12px; overflow-x: auto; margin: 8px 0 0; }
+  @media (max-width: 640px) { th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4) { display: none; } }
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <p><span class="logo">&gt;_</span></p>
+  <section class="card">
+    <h2>Token console</h2>
+    <p class="sub">Administrator access only.</p>
+    <button id="oidc-btn" class="primary" style="width:100%" hidden>Sign in with SSO</button>
+    <p id="denied" class="bad" hidden></p>
+    <details id="token-login" style="margin-top:12px">
+      <summary class="sub" style="cursor:pointer">Recovery: master token</summary>
+      <div class="row" style="margin-top:8px"><input id="master" type="password" class="mono" placeholder="REMOTE_TOKEN"><button id="master-btn">Entrer</button></div>
+    </details>
+  </section>
+</div>
+
+<div id="console" class="wrap" hidden>
+  <header class="top">
+    <span class="logo">&gt;_</span><h1>Token console</h1>
+    <span id="who" class="muted" style="font-size:12.5px"></span>
+    <button id="logout" class="link">Sign out</button>
+  </header>
+
+  <section class="card">
+    <h2>Subscription</h2>
+    <p class="sub">Generate a long-lived token on your machine with <code>claude setup-token</code>. It is never displayed again.</p>
+    <div id="ctok-state" style="margin-bottom:10px"></div>
+    <div class="row">
+      <input id="ctok" type="password" class="mono" placeholder="sk-ant-oat01-…" autocomplete="off">
+      <button id="ctok-save" class="primary">Save</button>
+      <button id="ctok-test">Test</button>
+    </div>
+    <p id="test-out" class="sub" style="margin-top:8px"></p>
+    <div id="limits" class="grid" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card">
+    <h2>API keys</h2>
+    <p class="sub">One key per client (Open WebUI, scripts, apps…). OpenAI-compatible: <code id="base-url"></code></p>
+    <form id="new-form" class="row">
+      <input id="new-name" placeholder="Key name (e.g. open-webui, raycast…)" required>
+      <button class="primary">Create a key</button>
+    </form>
+    <div id="newkey" class="newkey" hidden>
+      <b>New key: copy it now. It will not be displayed again.</b>
+      <code id="newkey-val"></code>
+      <div class="row"><button id="copy-key" type="button">Copy</button><button id="copy-snippet" type="button" class="link">Copy a Python example</button></div>
+      <pre class="snippet" id="snippet"></pre>
+    </div>
+    <table style="margin-top:14px">
+      <thead><tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th>Requests</th><th></th></tr></thead>
+      <tbody id="keys"></tbody>
+    </table>
+    <p id="nokeys" class="sub" hidden style="margin-top:10px">No keys yet.</p>
+  </section>
+
+  <section class="card">
+    <h2>Activity</h2>
+    <div id="stats" class="grid"></div>
+  </section>
+</div>
+
+<div id="toast" hidden></div>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const toast = (m, ms = 2400) => { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, ms); };
+const fmt = t => t ? new Date(t * 1000).toLocaleString("en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function call(path, method = "GET", body) {
+  const r = await fetch(path, { method, headers: { "X-Admin": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" });
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401) { showLogin(); throw new Error(d.detail || "Not signed in"); }
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  return d;
+}
+
+async function showLogin() {
+  $("#console").hidden = true; $("#login").hidden = false;
+  const cfg = await fetch("/admin/auth/config").then(r => r.json());
+  $("#oidc-btn").hidden = !cfg.oidc;
+  $("#token-login").open = !cfg.oidc;
+  const denied = new URLSearchParams(location.search).get("denied");
+  if (denied) { $("#denied").hidden = false; $("#denied").textContent = `Access denied for ${denied}: this account is not an administrator.`; }
+}
+$("#oidc-btn").onclick = () => location.href = "/admin/auth/login";
+$("#master-btn").onclick = async () => {
+  try { await call("/admin/auth/token", "POST", { token: $("#master").value }); load(); } catch (e) { toast(e.message); }
+};
+$("#master").onkeydown = e => { if (e.key === "Enter") $("#master-btn").click(); };
+$("#logout").onclick = async () => { await call("/admin/auth/logout", "POST"); showLogin(); };
+
+function renderLimits(l) {
+  const names = { five_hour: "5-hour window", seven_day: "Week", seven_day_opus: "Week Opus", seven_day_sonnet: "Week Sonnet" };
+  const w = l?.unifiedWindows || {};
+  $("#limits").innerHTML = Object.entries(w).map(([k, v]) => {
+    const p = Math.round((v.utilization || 0) * 100);
+    return `<div class="stat"><span>${names[k] || k}</span><b>${p} %</b><div class="bar"><i class="${p >= 90 ? "high" : p >= 70 ? "mid" : ""}" style="width:${Math.min(p, 100)}%"></i></div><span>↻ ${fmt(v.resetsAt)}</span></div>`;
+  }).join("") || `<p class="sub">Quotas appear after the first request.</p>`;
+}
+
+async function load() {
+  let s;
+  try { s = await call("/admin/api/state"); } catch { return; }
+  $("#login").hidden = true; $("#console").hidden = false;
+  $("#who").textContent = s.user.who + (s.user.how === "token" ? " (recovery)" : "");
+  $("#base-url").textContent = `${location.origin}/v1`;
+  const ct = s.claude_token;
+  $("#ctok-state").innerHTML = ct.set
+    ? `<span class="ok">● Token saved</span> <span class="muted mono">${esc(ct.masked)}</span> <span class="muted">· ${fmt(ct.updated)}</span> <button class="link" id="ctok-del">remove</button>`
+    : `<span class="bad">● No token</span> <span class="muted">— the CLI will use its host login if available; otherwise requests will fail.</span>`;
+  $("#ctok-del")?.addEventListener("click", async () => {
+    if (!confirm("Remove the subscription token?")) return;
+    await call("/admin/api/claude-token", "PUT", { token: "" }); load();
+  });
+  renderLimits(s.limits);
+  $("#keys").innerHTML = s.keys.slice().reverse().map(k => `
+    <tr class="${k.revoked ? "revoked" : ""}">
+      <td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}</td><td>${fmt(k.created)}</td><td>${fmt(k.last_used)}</td><td>${k.requests}</td>
+      <td style="text-align:right;white-space:nowrap">${k.revoked
+        ? `<button class="link" data-del="${k.id}">supprimer</button>`
+        : `<button class="danger" data-rev="${k.id}">Revoke</button>`}</td>
+    </tr>`).join("");
+  $("#nokeys").hidden = s.keys.length > 0;
+  const st = s.stats;
+  $("#stats").innerHTML = `<div class="stat"><b>${st.requests}</b><span>requests since startup</span></div>
+    <div class="stat"><b>${st.errors}</b><span>erreurs</span></div>
+    <div class="stat"><b>${(st.output_tokens / 1000).toFixed(1)}k</b><span>tokens generated</span></div>
+    <div class="stat"><b>${s.keys.filter(k => !k.revoked).length}</b><span>keys actives</span></div>`;
+}
+
+$("#keys").onclick = async e => {
+  const rev = e.target.dataset.rev, del = e.target.dataset.del;
+  try {
+    if (rev && confirm("Revoke this key? Clients using it will be rejected immediately.")) { await call(`/admin/api/keys/${rev}/revoke`, "POST"); toast("Key revoked"); }
+    if (del) { await call(`/admin/api/keys/${del}`, "DELETE"); }
+    load();
+  } catch (err) { toast(err.message); }
+};
+
+$("#new-form").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const r = await call("/admin/api/keys", "POST", { name: $("#new-name").value });
+    $("#new-name").value = "";
+    $("#newkey").hidden = false;
+    $("#newkey-val").textContent = r.key;
+    $("#snippet").textContent = `from openai import OpenAI\nclient = OpenAI(base_url="${location.origin}/v1", api_key="${r.key}")\nprint(client.chat.completions.create(model="sonnet", messages=[{"role": "user", "content": "Hello"}]).choices[0].message.content)`;
+    load();
+  } catch (err) { toast(err.message); }
+};
+$("#copy-key").onclick = () => { navigator.clipboard.writeText($("#newkey-val").textContent); toast("Key copied"); };
+$("#copy-snippet").onclick = () => { navigator.clipboard.writeText($("#snippet").textContent); toast("Example copied"); };
+
+$("#ctok-save").onclick = async () => {
+  const v = $("#ctok").value.trim();
+  if (!v) return toast("Paste the token first");
+  try { await call("/admin/api/claude-token", "PUT", { token: v }); $("#ctok").value = ""; toast("Token saved"); load(); }
+  catch (e) { toast(e.message, 4000); }
+};
+$("#ctok-test").onclick = async () => {
+  const out = $("#test-out");
+  out.className = "sub"; out.textContent = "Testing with a real Haiku request…";
+  try {
+    const r = await call("/admin/api/test", "POST");
+    out.className = r.ok ? "ok" : "bad";
+    out.textContent = r.ok ? `✓ Reply: “${r.reply}” in ${r.seconds} s` : `✗ ${r.error}`;
+    load();
+  } catch (e) { out.className = "bad"; out.textContent = "✗ " + e.message; }
+};
+
+load();
+</script>
+</body>
+</html>

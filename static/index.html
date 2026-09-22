@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CustomRemote</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23d97757'/><text x='16' y='22' font-size='17' text-anchor='middle' fill='white' font-family='monospace'>&gt;_</text></svg>">
+<link rel="stylesheet" href="/static/app.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <span class="logo">&gt;_</span> CustomRemote
+      <button id="theme-btn" class="icon" title="Theme">◐</button>
+    </div>
+    <div class="side-actions">
+      <button id="new-btn" class="primary">＋ New session</button>
+      <button id="resume-btn" title="Resume a CLI / VS Code session">↺ Resume</button>
+    </div>
+    <input id="side-search" type="search" placeholder="Filter…  (⌘K)">
+    <nav id="session-list"></nav>
+    <div id="limits" hidden></div>
+    <footer class="side-foot">
+      <span id="usage">—</span>
+      <button id="snippets-btn" class="link">Snippets</button>
+      <a href="/docs" target="_blank" class="link">API</a>
+    </footer>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <button id="menu-btn" class="icon" title="Sessions">☰</button>
+      <div class="title-wrap">
+        <h1 id="s-title">No session</h1>
+        <div id="s-cwd" class="muted mono"></div>
+      </div>
+      <div id="s-controls" hidden>
+        <span id="s-status" class="status"></span>
+        <label class="ctl">Model
+          <input id="s-model" list="model-list" placeholder="default" size="9">
+          <datalist id="model-list"></datalist>
+        </label>
+        <label class="ctl">Mode
+          <select id="s-mode"></select>
+        </label>
+        <label class="ctl">Effort
+          <select id="s-effort"></select>
+        </label>
+        <span id="s-ctx" class="pill" title="Context size (last call)"></span>
+        <span id="s-cost" class="pill" title="Estimated API-equivalent cost (included in the subscription)"></span>
+        <button id="s-more" class="icon" title="More">⋯</button>
+      </div>
+    </header>
+
+    <div id="perm-banner" hidden></div>
+    <section id="log"><div class="empty">Create or resume a session to get started.</div></section>
+
+    <form id="composer" hidden>
+      <div id="attachments"></div>
+      <div id="slash-menu" hidden></div>
+      <div class="compose-row">
+        <button type="button" id="snip-insert" class="icon" title="Insert a snippet">✦</button>
+        <label class="icon" title="Attach an image"><input id="file-input" type="file" accept="image/*" multiple hidden>🖼</label>
+        <textarea id="input" rows="1" placeholder="Message Claude…  (Enter to send, Shift+Enter for a new line, / for commands)"></textarea>
+        <button type="submit" id="send-btn" class="primary">Send</button>
+        <button type="button" id="stop-btn" class="danger" hidden title="Interrupt (Escape)">■ Stop</button>
+      </div>
+    </form>
+  </main>
+</div>
+
+<!-- New session -->
+<dialog id="dlg-new">
+  <form method="dialog" id="new-form">
+    <h2>New session</h2>
+    <label>Working directory
+      <div class="row"><input id="n-cwd" class="mono" required><button type="button" id="n-browse">Browse</button></div>
+    </label>
+    <div id="n-recents" class="chips"></div>
+    <div id="n-browser" hidden></div>
+    <label>Name <input id="n-name" placeholder="(directory name)"></label>
+    <div class="grid3">
+      <label>Model <input id="n-model" list="model-list" placeholder="default"></label>
+      <label>Permissions <select id="n-mode"></select></label>
+      <label>Effort <select id="n-effort"></select></label>
+    </div>
+    <label>Additional system instructions <textarea id="n-sys" rows="2" placeholder="optional — appended to the Claude Code system prompt"></textarea></label>
+    <label>Additional directories <input id="n-dirs" class="mono" placeholder="comma-separated paths"></label>
+    <p class="hint" id="n-mode-hint"></p>
+    <menu><button value="cancel" formnovalidate>Cancel</button><button value="ok" class="primary">Create</button></menu>
+  </form>
+</dialog>
+
+<!-- Resume -->
+<dialog id="dlg-resume" class="wide">
+  <form method="dialog">
+    <h2>Resume an existing session</h2>
+    <div class="row"><input id="r-search" type="search" placeholder="Search by title or directory…"><label class="inline"><input type="checkbox" id="r-fork"> Fork (copy)</label></div>
+    <div id="r-list" class="list"></div>
+    <menu><button value="cancel">Close</button></menu>
+  </form>
+</dialog>
+
+<!-- Snippets -->
+<dialog id="dlg-snippets" class="wide">
+  <form method="dialog">
+    <h2>Snippets</h2>
+    <p class="hint">Reusable prompts. <code>{{sel}}</code> is replaced by the text already in the input.</p>
+    <div id="snip-list"></div>
+    <button type="button" id="snip-add">＋ Add</button>
+    <menu><button value="cancel">Close</button><button type="button" id="snip-save" class="primary">Save</button></menu>
+  </form>
+</dialog>
+
+<!-- Session menu -->
+<dialog id="dlg-more">
+  <form method="dialog">
+    <h2 id="m-title">Session</h2>
+    <dl id="m-info" class="kv"></dl>
+    <div id="m-allow"></div>
+    <label>Additional system instructions <textarea id="m-sys" rows="3"></textarea></label>
+    <menu>
+      <button type="button" id="m-rename">Rename</button>
+      <button type="button" id="m-copy">Copy terminal command</button>
+      <button type="button" id="m-stop">Stop process</button>
+      <button type="button" id="m-delete" class="danger">Delete</button>
+      <button value="cancel">Close</button>
+      <button type="button" id="m-save" class="primary">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<!-- Token -->
+<dialog id="dlg-token">
+  <form method="dialog" id="token-form">
+    <h2>Access token</h2>
+    <p class="hint">Paste the server token (the contents of <code>data/token</code>).</p>
+    <input id="t-input" class="mono" required autofocus>
+    <menu><button value="ok" class="primary">Confirm</button></menu>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

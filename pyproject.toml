@@ -1,0 +1,15 @@
+[project]
+name = "custom-remote"
+version = "0.1.0"
+description = "Personal Claude Code remote controlling the subscription CLI through an HTTP API and browser UI"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "authlib>=1.3",
+    "httpx>=0.27",
+    "itsdangerous>=2.2",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,170 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: custom-remote
+  annotations:
+    description: OpenAI-compatible subscription gateway via CLI, token console and Open WebUI with OIDC SSO
+parameters:
+  - name: IMAGE
+    required: true
+  - name: OPENWEBUI_IMAGE
+    value: ghcr.io/open-webui/open-webui:v0.11.4
+  - name: API_HOST
+    description: Gateway route hostname (/admin console and /v1)
+    required: true
+  - name: CHAT_HOST
+    description: Open WebUI route hostname
+    required: true
+  - name: OIDC_ISSUER
+    description: "Issuer OIDC, ex. https://keycloak.example/auth/realms/xxx"
+    required: true
+  - name: OIDC_CLIENT_ID
+    required: true
+  - name: OIDC_PROVIDER_NAME
+    value: SSO
+  - name: ADMIN_EMAILS
+    description: Allowed /admin email addresses, comma-separated
+    value: ""
+  - name: ADMIN_GROUPS
+    description: Allowed /admin Keycloak groups or roles, comma-separated
+    value: ""
+  - name: DEFAULT_MODEL
+    value: sonnet
+  - name: TASK_MODEL
+    description: Model for Open WebUI background tasks (titles, tags, suggestions)
+    value: haiku
+objects:
+  # ---------- passerelle ----------
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata: {name: claude-api-data, labels: {app: claude-api}}
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources: {requests: {storage: 1Gi}}
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata: {name: claude-api, labels: {app: claude-api, app.kubernetes.io/part-of: custom-remote}}
+    spec:
+      replicas: 1
+      strategy: {type: Recreate}
+      selector: {matchLabels: {app: claude-api}}
+      template:
+        metadata: {labels: {app: claude-api}}
+        spec:
+          imagePullSecrets: [{name: ghcr-als0m3}]
+          containers:
+            - name: api
+              image: ${IMAGE}
+              imagePullPolicy: Always
+              ports: [{containerPort: 8787, name: http}]
+              env:
+                - {name: REMOTE_ALLOWED_HOSTS, value: "${API_HOST},claude-api"}
+                - {name: REMOTE_HTTPS, value: "1"}
+                - {name: REMOTE_OAI_MODEL, value: "${DEFAULT_MODEL}"}
+                - {name: REMOTE_OIDC_ISSUER, value: "${OIDC_ISSUER}"}
+                - {name: REMOTE_OIDC_CLIENT_ID, value: "${OIDC_CLIENT_ID}"}
+                - {name: REMOTE_ADMIN_EMAILS, value: "${ADMIN_EMAILS}"}
+                - {name: REMOTE_ADMIN_GROUPS, value: "${ADMIN_GROUPS}"}
+                - name: REMOTE_OIDC_CLIENT_SECRET
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: oidc-client-secret}}
+                - name: REMOTE_TOKEN
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: remote-token}}
+                - name: REMOTE_SESSION_SECRET
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: session-secret}}
+              volumeMounts: [{name: data, mountPath: /data}]
+              readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
+              livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 30, failureThreshold: 5}
+              resources:
+                requests: {cpu: 50m, memory: 256Mi}
+                limits: {memory: 1536Mi}
+          volumes: [{name: data, persistentVolumeClaim: {claimName: claude-api-data}}]
+  - apiVersion: v1
+    kind: Service
+    metadata: {name: claude-api, labels: {app: claude-api}}
+    spec:
+      selector: {app: claude-api}
+      ports: [{name: http, port: 8787, targetPort: http}]
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: claude-api
+      labels: {app: claude-api}
+      annotations: {haproxy.router.openshift.io/timeout: 600s}
+    spec:
+      host: ${API_HOST}
+      to: {kind: Service, name: claude-api}
+      port: {targetPort: http}
+      tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
+
+  # ---------- Open WebUI ----------
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata: {name: open-webui-data, labels: {app: open-webui}}
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources: {requests: {storage: 5Gi}}
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata: {name: open-webui, labels: {app: open-webui, app.kubernetes.io/part-of: custom-remote}}
+    spec:
+      replicas: 1
+      strategy: {type: Recreate}
+      selector: {matchLabels: {app: open-webui}}
+      template:
+        metadata: {labels: {app: open-webui}}
+        spec:
+          containers:
+            - name: open-webui
+              image: ${OPENWEBUI_IMAGE}
+              ports: [{containerPort: 8080, name: http}]
+              env:
+                - {name: WEBUI_URL, value: "https://${CHAT_HOST}"}
+                - {name: DATA_DIR, value: /app/backend/data}
+                - {name: HOME, value: /app/backend/data/home}
+                - {name: ENABLE_OLLAMA_API, value: "False"}
+                - {name: OPENAI_API_BASE_URL, value: "http://claude-api:8787/v1"}
+                - name: OPENAI_API_KEY
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: remote-token}}
+                - {name: TASK_MODEL_EXTERNAL, value: "${TASK_MODEL}"}
+                - {name: DEFAULT_MODELS, value: "${DEFAULT_MODEL}"}
+                - {name: ENABLE_EVALUATION_ARENA_MODELS, value: "False"}
+                # SSO only; new accounts require administrator approval.
+                - {name: ENABLE_OAUTH_SIGNUP, value: "True"}
+                - {name: OAUTH_MERGE_ACCOUNTS_BY_EMAIL, value: "True"}
+                - {name: ENABLE_LOGIN_FORM, value: "False"}
+                - {name: ENABLE_PASSWORD_AUTH, value: "False"}
+                - {name: DEFAULT_USER_ROLE, value: pending}
+                - {name: OAUTH_PROVIDER_NAME, value: "${OIDC_PROVIDER_NAME}"}
+                - {name: OPENID_PROVIDER_URL, value: "${OIDC_ISSUER}/.well-known/openid-configuration"}
+                - {name: OPENID_REDIRECT_URI, value: "https://${CHAT_HOST}/oauth/oidc/callback"}
+                - {name: OAUTH_CLIENT_ID, value: "${OIDC_CLIENT_ID}"}
+                - name: OAUTH_CLIENT_SECRET
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: oidc-client-secret}}
+                - {name: OAUTH_SCOPES, value: "openid email profile"}
+                - {name: OAUTH_CODE_CHALLENGE_METHOD, value: S256}
+                - name: WEBUI_SECRET_KEY
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: webui-secret-key}}
+              volumeMounts: [{name: data, mountPath: /app/backend/data}]
+              readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10, failureThreshold: 30}
+              livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 120, periodSeconds: 30, failureThreshold: 5}
+              resources:
+                requests: {cpu: 100m, memory: 768Mi}
+                limits: {memory: 2Gi}
+          volumes: [{name: data, persistentVolumeClaim: {claimName: open-webui-data}}]
+  - apiVersion: v1
+    kind: Service
+    metadata: {name: open-webui, labels: {app: open-webui}}
+    spec:
+      selector: {app: open-webui}
+      ports: [{name: http, port: 8080, targetPort: http}]
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: open-webui
+      labels: {app: open-webui}
+      annotations: {haproxy.router.openshift.io/timeout: 600s}
+    spec:
+      host: ${CHAT_HOST}
+      to: {kind: Service, name: open-webui}
+      port: {targetPort: http}
+      tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
