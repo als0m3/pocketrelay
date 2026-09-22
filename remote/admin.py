@@ -52,9 +52,13 @@ def is_allowed(claims: dict) -> bool:
     if not ADMIN_EMAILS and not ADMIN_GROUPS:
         return False  # No implicit access: require an explicit allowlist.
     email = (claims.get("email") or "").lower()
+    if email in ADMIN_EMAILS and claims.get("email_verified") is not False:  # Reject unverified email.
+        return True
     groups = {g.strip("/") for g in claims.get("groups") or []}
-    roles = set((claims.get("realm_access") or {}).get("roles") or [])
-    return email in ADMIN_EMAILS or bool((groups | roles) & ADMIN_GROUPS)
+    roles = set(claims.get("roles") or [])                                   # Flat roles mapper
+    roles |= set((claims.get("realm_access") or {}).get("roles") or [])     # Keycloak realm roles
+    roles |= set(((claims.get("resource_access") or {}).get(OIDC_CLIENT_ID) or {}).get("roles") or [])
+    return bool((groups | roles) & ADMIN_GROUPS)
 
 
 def open_session(request: Request, who: str, how: str):

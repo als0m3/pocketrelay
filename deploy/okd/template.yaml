@@ -34,6 +34,15 @@ parameters:
   - name: ADMIN_GROUPS
     description: Allowed /admin Keycloak groups or roles, comma-separated
     value: ""
+  - name: ACCESS_ROLE
+    description: Keycloak role required for Open WebUI access
+    value: relay_access
+  - name: ADMIN_ROLE
+    description: Keycloak role granting Open WebUI administration
+    value: relay_admin
+  - name: ROLES_CLAIM
+    description: Token claim containing roles (Keycloak mapper)
+    value: roles
   - name: DEFAULT_MODEL
     value: sonnet
   - name: TASK_MODEL
@@ -135,8 +144,12 @@ objects:
                 - {name: TASK_MODEL_EXTERNAL, value: "${TASK_MODEL}"}
                 - {name: DEFAULT_MODELS, value: "${DEFAULT_MODEL}"}
                 - {name: ENABLE_EVALUATION_ARENA_MODELS, value: "False"}
-                # SSO only; new accounts require administrator approval.
+                # OIDC-only login; ACCESS_ROLE grants access, ADMIN_ROLE grants administration.
                 - {name: ENABLE_OAUTH_SIGNUP, value: "True"}
+                - {name: ENABLE_OAUTH_ROLE_MANAGEMENT, value: "True"}
+                - {name: OAUTH_ROLES_CLAIM, value: "${ROLES_CLAIM}"}
+                - {name: OAUTH_ALLOWED_ROLES, value: "${ACCESS_ROLE}"}
+                - {name: OAUTH_ADMIN_ROLES, value: "${ADMIN_ROLE}"}
                 - {name: OAUTH_MERGE_ACCOUNTS_BY_EMAIL, value: "True"}
                 - {name: ENABLE_LOGIN_FORM, value: "False"}
                 - {name: ENABLE_PASSWORD_AUTH, value: "False"}
