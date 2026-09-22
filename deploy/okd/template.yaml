@@ -43,6 +43,12 @@ parameters:
   - name: ROLES_CLAIM
     description: Token claim containing roles (Keycloak mapper)
     value: roles
+  - name: USER_RATE
+    description: Per-user /v1 rate (e.g. 200/h, 0 = unlimited; administrators exempt)
+    value: 200/h
+  - name: MAX_CONCURRENCY
+    description: Maximum concurrent model requests; additional requests are queued
+    value: "6"
   - name: DEFAULT_MODEL
     value: sonnet
   - name: TASK_MODEL
@@ -86,6 +92,13 @@ objects:
                   valueFrom: {secretKeyRef: {name: custom-remote, key: remote-token}}
                 - name: REMOTE_SESSION_SECRET
                   valueFrom: {secretKeyRef: {name: custom-remote, key: session-secret}}
+                # /v1 accepts revocable keys only; master-token console recovery remains available.
+                - {name: REMOTE_V1_ALLOW_MASTER, value: "0"}
+                - {name: REMOTE_USER_RATE, value: "${USER_RATE}"}
+                - {name: REMOTE_MAX_CONCURRENCY, value: "${MAX_CONCURRENCY}"}
+                - {name: REMOTE_FORWARDER_KEY_NAME, value: open-webui}
+                - name: REMOTE_FORWARD_JWT_SECRET
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: forward-jwt-secret}}
               volumeMounts: [{name: data, mountPath: /data}]
               readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
               livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 30, failureThreshold: 5}
@@ -139,8 +152,12 @@ objects:
                 - {name: HOME, value: /app/backend/data/home}
                 - {name: ENABLE_OLLAMA_API, value: "False"}
                 - {name: OPENAI_API_BASE_URL, value: "http://claude-api:8787/v1"}
-                - name: OPENAI_API_KEY
-                  valueFrom: {secretKeyRef: {name: custom-remote, key: remote-token}}
+                - name: OPENAI_API_KEY          # Dedicated revocable sk-cr key, not the master token
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: owui-api-key}}
+                - {name: ENABLE_PERSISTENT_CONFIG, value: "False"}   # Environment is authoritative at startup.
+                - {name: ENABLE_FORWARD_USER_INFO_HEADERS, value: "True"}
+                - name: FORWARD_USER_INFO_HEADER_JWT_SECRET  # Signed identity for per-user limits
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: forward-jwt-secret}}
                 - {name: TASK_MODEL_EXTERNAL, value: "${TASK_MODEL}"}
                 - {name: DEFAULT_MODELS, value: "${DEFAULT_MODEL}"}
                 - {name: ENABLE_EVALUATION_ARENA_MODELS, value: "False"}
@@ -189,3 +206,24 @@ objects:
       to: {kind: Service, name: open-webui}
       port: {targetPort: http}
       tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
+
+  # ---------- network: only the router and Open WebUI can reach pods ----------
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata: {name: claude-api-ingress}
+    spec:
+      podSelector: {matchLabels: {app: claude-api}}
+      policyTypes: [Ingress]
+      ingress:
+        - from: [{podSelector: {matchLabels: {app: open-webui}}}]
+        - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/ingress: ""}}}]
+        - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/host-network: ""}}}]
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata: {name: open-webui-ingress}
+    spec:
+      podSelector: {matchLabels: {app: open-webui}}
+      policyTypes: [Ingress]
+      ingress:
+        - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/ingress: ""}}}]
+        - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/host-network: ""}}}]

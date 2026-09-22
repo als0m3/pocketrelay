@@ -23,6 +23,14 @@ elif [ -n "${OIDC_CLIENT_SECRET:-}" ]; then
   oc_ patch secret custom-remote -p "{\"stringData\":{\"oidc-client-secret\":\"${OIDC_CLIENT_SECRET}\"}}"
 fi
 
+# Generate newly introduced secrets once for existing deployments.
+for k in forward-jwt-secret owui-api-key; do
+  if [ -z "$(oc_ get secret custom-remote -o jsonpath="{.data.$k}")" ]; then
+    v=$([ "$k" = owui-api-key ] && echo "a-generer" || openssl rand -base64 48 | tr -d '\n')
+    oc_ patch secret custom-remote -p "{\"stringData\":{\"$k\":\"$v\"}}" >/dev/null
+  fi
+done
+
 # Sideload the private image; no registry secret is stored in the cluster.
 IMAGE="$(grep '^IMAGE=' params.env | cut -d= -f2-)"
 [ "${SKIP_SIDELOAD:-0}" = "1" ] || CONTEXT="$CONTEXT" ./sideload.sh "$IMAGE"
@@ -40,5 +48,13 @@ for r in claude-api open-webui; do
 done
 oc_ rollout restart deployment/claude-api deployment/open-webui >/dev/null
 oc_ rollout status deployment/claude-api --timeout=180s
+
+# Create a dedicated Open WebUI API key, hash it on the gateway volume, and save it as a secret.
+if [ "$(oc_ get secret custom-remote -o jsonpath='{.data.owui-api-key}' | base64 -d)" = "a-generer" ]; then
+  key=$(oc_ exec deploy/claude-api -- python -c "from remote import keys; print(keys.create_key('open-webui')[1])")
+  oc_ patch secret custom-remote -p "{\"stringData\":{\"owui-api-key\":\"$key\"}}" >/dev/null
+  oc_ rollout restart deployment/open-webui >/dev/null
+  echo "open-webui API key created"
+fi
 oc_ rollout status deployment/open-webui --timeout=600s
 echo "Console : https://$API_HOST/admin   ·   Chat : https://$CHAT_HOST"

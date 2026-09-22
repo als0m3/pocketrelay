@@ -23,7 +23,7 @@ from contextlib import aclosing
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import accounts, codex_backend, keys
+from . import accounts, codex_backend, keys, limits
 from .config import CLAUDE_BIN, DATA, TOKEN
 from .sessions import child_env
 
@@ -58,15 +58,27 @@ async def oai_error_handler(request: Request, exc: OAIError):
     return JSONResponse(exc.body(), status_code=exc.status)
 
 
-def check_auth(request: Request):
+# Allow the master token on /v1 locally; production accepts revocable keys only.
+V1_ALLOW_MASTER = os.environ.get("REMOTE_V1_ALLOW_MASTER", "1") == "1"
+
+
+def check_auth(request: Request) -> dict:
     header = request.headers.get("authorization", "")
     key = header[7:].strip() if header.lower().startswith("bearer ") else request.headers.get("x-api-key", "")
-    if not key or not (secrets.compare_digest(key, TOKEN) or keys.verify(key)):
+    if key and V1_ALLOW_MASTER and secrets.compare_digest(key, TOKEN):
+        return {"master": True}
+    item = keys.verify(key) if key else None
+    if not item:
         raise OAIError(401, "Incorrect API key provided.", "invalid_request_error", code="invalid_api_key")
+    return {"key_id": item["id"], "key_name": item["name"]}
 
 
 async def read_json(request: Request) -> dict:
-    check_auth(request)
+    ident = check_auth(request)
+    try:
+        limits.admit(request.headers, ident)
+    except limits.LimitError as e:
+        raise OAIError(e.status, e.message, "rate_limit_error", code=e.code)
     try:
         body = await request.json()
     except Exception:
@@ -166,20 +178,23 @@ async def run_llm(system: str, blocks: list[dict], model: str, effort: str | Non
         tried.add(acc["id"])
         started = False
         try:
-            if provider == "claude":
-                gen = run_claude(system, blocks, model, EFFORT_MAP.get(effort or ""), accounts.token(acc),
-                                 lambda lim, a=acc: accounts.record_limits(a, lim))
-            else:
-                gen = _codex(system, blocks, model, effort, schema, acc)
-            async with aclosing(gen) as inner:
-                async for ev in inner:
-                    if ev[0] == "text":
-                        started = True
-                    elif ev[0] == "done":
-                        ev[1]["account"] = acc["label"]
-                    yield ev
-            accounts.record_success(acc)
-            return
+            async with limits.slot():
+                if provider == "claude":
+                    gen = run_claude(system, blocks, model, EFFORT_MAP.get(effort or ""), accounts.token(acc),
+                                     lambda lim, a=acc: accounts.record_limits(a, lim))
+                else:
+                    gen = _codex(system, blocks, model, effort, schema, acc)
+                async with aclosing(gen) as inner:
+                    async for ev in inner:
+                        if ev[0] == "text":
+                            started = True
+                        elif ev[0] == "done":
+                            ev[1]["account"] = acc["label"]
+                        yield ev
+                accounts.record_success(acc)
+                return
+        except limits.LimitError as e:
+            raise OAIError(e.status, e.message, "api_error", code=e.code)
         except OAIError as e:
             last_error = e
             if not accounts.record_failure(acc, _failure_kind(e), e.message, getattr(e, "resets_at", None)) or started:
