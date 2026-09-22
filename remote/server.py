@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import admin, codex_backend, history
+from . import accounts, admin, codex_backend, history
 from .openai_compat import OAIError, oai_error_handler, router as openai_router
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     manager = Manager()
     yield
     await manager.shutdown()
-    await codex_backend.server.stop()
+    await codex_backend.stop_all()
 
 
 app = FastAPI(title="CustomRemote", version="0.1.0", lifespan=lifespan,
@@ -336,7 +336,7 @@ async def run_once(body: OneShot):
             "--no-session-persistence"]
     if body.model:
         args += ["--model", body.model]
-    proc = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=child_env(),
+    proc = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=child_env(accounts.session_token()),
                                                 stdin=asyncio.subprocess.DEVNULL,
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:

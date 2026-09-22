@@ -12,19 +12,15 @@ import os
 import shutil
 import time
 
-from . import pdf
+from . import accounts, pdf
 from .config import DATA
 
 CODEX_BIN = os.environ.get("CODEX_BIN") or shutil.which("codex") or ""
 ENABLED = bool(CODEX_BIN) and os.environ.get("REMOTE_ENABLE_CODEX", "1") == "1"
-# Cluster Codex credentials live on the data volume.
-CODEX_HOME = os.environ.get("CODEX_HOME") or ""
 WORKDIR = DATA / "codex-cwd"
 DISABLED_FEATURES = ["shell_tool", "apps", "browser_use", "browser_use_external", "computer_use",
                      "image_generation", "in_app_browser", "memories", "goals"]
 
-LAST_LIMITS: dict = {}
-ACCOUNT: dict = {}
 
 
 class CodexError(Exception):
@@ -34,7 +30,11 @@ class CodexError(Exception):
 
 
 class AppServer:
-    def __init__(self):
+    """One codex app-server process per ChatGPT account, with its own CODEX_HOME."""
+
+    def __init__(self, codex_home: str | None):
+        self.codex_home = codex_home
+        self.limits: dict = {}
         self.proc: asyncio.subprocess.Process | None = None
         self.next_id = 0
         self.pending: dict[int, asyncio.Future] = {}
@@ -57,9 +57,9 @@ class AppServer:
                 args += ["--disable", f]
             env = dict(os.environ)
             env.pop("OPENAI_API_KEY", None)  # use the ChatGPT subscription
-            if CODEX_HOME:
-                os.makedirs(CODEX_HOME, exist_ok=True)
-                env["CODEX_HOME"] = CODEX_HOME
+            if self.codex_home:
+                os.makedirs(self.codex_home, exist_ok=True)
+                env["CODEX_HOME"] = self.codex_home
             WORKDIR.mkdir(parents=True, exist_ok=True)
             self.proc = await asyncio.create_subprocess_exec(
                 *args, cwd=WORKDIR, env=env, limit=64 * 1024 * 1024,
@@ -112,8 +112,7 @@ class AppServer:
                     self._send({"id": o["id"], "result": {"decision": "decline"}})
                     continue
                 if method == "account/rateLimits/updated":
-                    LAST_LIMITS.clear()
-                    LAST_LIMITS.update(params.get("rateLimits") or {}, seen_at=time.time())
+                    self.limits = {**(params.get("rateLimits") or {}), "seen_at": time.time()}
                 elif method in ("account/login/completed", "account/updated"):
                     self.login_events.put_nowait({"method": method, **params})
                 tid = params.get("threadId")
@@ -134,18 +133,49 @@ class AppServer:
         self.models_at = time.time()
         return self.models
 
-    async def default_model(self) -> str:
-        if env := os.environ.get("REMOTE_CODEX_MODEL"):
-            return env
-        models = await self.list_models()
-        return next((m["id"] for m in models if m.get("isDefault")), models[0]["id"] if models else "gpt-5.5")
-
     async def stop(self):
         if self.alive:
             self.proc.terminate()
 
 
-server = AppServer()
+_servers: dict[str, AppServer] = {}
+
+
+def server_for(acc: dict) -> AppServer:
+    srv = _servers.get(acc["id"])
+    if srv is None:
+        srv = _servers[acc["id"]] = AppServer(accounts.codex_home(acc))
+    return srv
+
+
+async def stop_account(acc_id: str):
+    srv = _servers.pop(acc_id, None)
+    if srv:
+        await srv.stop()
+
+
+async def stop_all():
+    for srv in list(_servers.values()):
+        await srv.stop()
+
+
+async def list_models() -> list[dict]:
+    """Read the shared catalog from the first responding account."""
+    for acc in accounts.listing("codex"):
+        if not acc["enabled"]:
+            continue
+        try:
+            return await server_for(acc).list_models()
+        except Exception:
+            continue
+    return []
+
+
+async def default_model() -> str:
+    if env := os.environ.get("REMOTE_CODEX_MODEL"):
+        return env
+    models = await list_models()
+    return next((m["id"] for m in models if m.get("isDefault")), models[0]["id"] if models else "gpt-5.5")
 
 
 def expand_documents(blocks: list[dict]) -> list[dict]:
@@ -178,8 +208,14 @@ def to_inputs(blocks: list[dict]) -> list[dict]:
     return out or [{"type": "text", "text": "(empty)"}]
 
 
-async def run_codex(system: str, blocks: list[dict], model: str, effort: str | None, output_schema: dict | None = None):
+async def run_codex(system: str, blocks: list[dict], model: str, effort: str | None,
+                    output_schema: dict | None = None, server: AppServer | None = None):
     """Same interface as run_claude: ("text", delta), then ("done", info)."""
+    if server is None:
+        acc = accounts.pick("codex")
+        if not acc:
+            raise CodexError("No Codex account available.", "authentication_error")
+        server = server_for(acc)
     params = {"baseInstructions": system, "ephemeral": True, "sandbox": "read-only",
               "approvalPolicy": "never", "cwd": str(WORKDIR), "model": model}
     thread = (await server.call("thread/start", params))["thread"]
@@ -253,16 +289,13 @@ def _kind(err: dict) -> str:
 
 # ---------- account (console /admin) ----------
 
-async def account() -> dict:
-    res = await server.call("account/read", {})
-    ACCOUNT.clear()
-    ACCOUNT.update(res)
-    return res
+async def account(srv: AppServer) -> dict:
+    return await srv.call("account/read", {})
 
 
-async def start_device_login() -> dict:
-    return await server.call("account/login/start", {"type": "chatgptDeviceCode"})
+async def start_device_login(srv: AppServer) -> dict:
+    return await srv.call("account/login/start", {"type": "chatgptDeviceCode"})
 
 
-async def logout():
-    await server.call("account/logout", {})
+async def logout(srv: AppServer):
+    await srv.call("account/logout", {})

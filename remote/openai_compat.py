@@ -23,7 +23,7 @@ from contextlib import aclosing
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import codex_backend, keys
+from . import accounts, codex_backend, keys
 from .config import CLAUDE_BIN, DATA, TOKEN
 from .sessions import child_env
 
@@ -38,7 +38,6 @@ EFFORT_MAP = {"minimal": "low", "none": "low", "low": "low", "medium": "medium",
 WORKDIR = DATA / "oai-cwd"
 DEBUG = os.environ.get("REMOTE_OAI_DEBUG") == "1"
 TOOL_OPEN = "<tool_call>"
-LAST_LIMITS: dict = {}  # Latest subscription quotas reported by the CLI.
 STATS = {"requests": 0, "errors": 0, "output_tokens": 0}
 TOOL_MARKERS = [TOOL_OPEN, "<function_calls>"]  # Claude sometimes uses the second native format.
 
@@ -100,28 +99,68 @@ async def resolve_model(model: str | None) -> str:
         return m
     if codex_backend.ENABLED:
         try:
-            ids = {x["id"] for x in await codex_backend.server.list_models()}
+            ids = {x["id"] for x in await codex_backend.list_models()}
         except Exception:
             ids = set()
         if m in ids:
             return m
         if m == "codex" or m.startswith(("codex/", "gpt", "o1", "o3", "o4", "chatgpt")):
             sub = m.removeprefix("codex/")
-            return sub if sub in ids else await codex_backend.server.default_model()
+            return sub if sub in ids else await codex_backend.default_model()
     return DEFAULT_MODEL  # Unknown names use the default Claude model.
 
 
+def _failure_kind(e: OAIError) -> str:
+    if e.status == 429:
+        return "rate_limit"
+    if e.status in (401, 503) or e.type == "authentication_error" or e.code == "subscription_not_configured":
+        return "auth"
+    return "other"
+
+
 async def run_llm(system: str, blocks: list[dict], model: str, effort: str | None, schema: dict | None = None):
-    """Route to the correct backend using the same text/done event stream."""
-    if is_claude(model):
-        async with aclosing(run_claude(system, blocks, model, EFFORT_MAP.get(effort or ""))) as inner:
-            async for ev in inner:
-                yield ev
-        return
-    if effort in ("minimal", "none"):
+    """Route to a backend and account using the same text/done event stream.
+
+    Before any text is emitted, quota/authentication failures pause
+    the account and retry the request with the next account.
+    """
+    provider = "claude" if is_claude(model) else "codex"
+    if provider == "codex" and effort in ("minimal", "none"):
         effort = "low"  # niveaux absents chez Codex
+    tried: set[str] = set()
+    last_error: OAIError | None = None
+    while True:
+        acc = accounts.pick(provider, tried)
+        if acc is None:
+            raise last_error or OAIError(503, f"No {provider} account available: add one in /admin.",
+                                         "api_error", code="no_account_available")
+        tried.add(acc["id"])
+        started = False
+        try:
+            if provider == "claude":
+                gen = run_claude(system, blocks, model, EFFORT_MAP.get(effort or ""), accounts.token(acc),
+                                 lambda lim, a=acc: accounts.record_limits(a, lim))
+            else:
+                gen = _codex(system, blocks, model, effort, schema, acc)
+            async with aclosing(gen) as inner:
+                async for ev in inner:
+                    if ev[0] == "text":
+                        started = True
+                    elif ev[0] == "done":
+                        ev[1]["account"] = acc["label"]
+                    yield ev
+            accounts.record_success(acc)
+            return
+        except OAIError as e:
+            last_error = e
+            if not accounts.record_failure(acc, _failure_kind(e), e.message, getattr(e, "resets_at", None)) or started:
+                raise
+
+
+async def _codex(system, blocks, model, effort, schema, acc):
+    srv = codex_backend.server_for(acc)
     try:
-        async with aclosing(codex_backend.run_codex(system, blocks, model, effort or None, schema)) as inner:
+        async with aclosing(codex_backend.run_codex(system, blocks, model, effort or None, schema, srv)) as inner:
             async for ev in inner:
                 if ev[0] == "done":
                     STATS["requests"] += 1
@@ -130,7 +169,13 @@ async def run_llm(system: str, blocks: list[dict], model: str, effort: str | Non
     except codex_backend.CodexError as e:
         STATS["errors"] += 1
         status = {"rate_limit_error": 429, "authentication_error": 503, "invalid_request_error": 400}.get(e.kind, 502)
-        raise OAIError(status, e.message, e.kind)
+        err = OAIError(status, e.message, e.kind)
+        win = (srv.limits.get("primary") or {}) if e.kind == "rate_limit_error" else {}
+        err.resets_at = win.get("resetsAt")
+        raise err
+    finally:
+        if srv.limits:
+            accounts.record_limits(acc, srv.limits)
 
 
 # ---------- content conversion ----------
@@ -303,8 +348,9 @@ async def build_prompt(turns: list[dict], system_parts: list[str], extra: list[s
 
 # ---------- CLI execution ----------
 
-async def run_claude(system: str, blocks: list[dict], model: str, effort: str | None):
-    """Yield ("text", delta) events, followed by ("done", info)."""
+async def run_claude(system: str, blocks: list[dict], model: str, effort: str | None,
+                     token: str | None = None, on_limits=None):
+    """Yield text/done events; token is the selected account setup-token."""
     WORKDIR.mkdir(parents=True, exist_ok=True)
     args = [CLAUDE_BIN, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
             "--include-partial-messages", "--tools", "", "--system-prompt", system,
@@ -312,7 +358,7 @@ async def run_claude(system: str, blocks: list[dict], model: str, effort: str | 
     if effort:
         args += ["--effort", effort]
     proc = await asyncio.create_subprocess_exec(
-        *args, cwd=WORKDIR, env=child_env(), limit=64 * 1024 * 1024,
+        *args, cwd=WORKDIR, env=child_env(token), limit=64 * 1024 * 1024,
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     msg = {"type": "user", "message": {"role": "user", "content": blocks}, "parent_tool_use_id": None, "session_id": ""}
     proc.stdin.write((json.dumps(msg, ensure_ascii=False) + "\n").encode())
@@ -320,6 +366,7 @@ async def run_claude(system: str, blocks: list[dict], model: str, effort: str | 
     proc.stdin.close()
     info = {"model": model, "usage": {}}
     streamed = False
+    limits: dict = {}
     try:
         async for raw in proc.stdout:
             try:
@@ -335,18 +382,22 @@ async def run_claude(system: str, blocks: list[dict], model: str, effort: str | 
             elif t == "system" and o.get("subtype") == "init":
                 info["model"] = o.get("model") or model
             elif t == "rate_limit_event":
-                LAST_LIMITS.clear()
-                LAST_LIMITS.update(o.get("rate_limit_info") or {}, seen_at=time.time())
+                limits = o.get("rate_limit_info") or {}
+                if on_limits:
+                    on_limits(limits)
             elif t == "result":
                 if o.get("is_error"):
                     STATS["errors"] += 1
                     text = str(o.get("result") or o.get("subtype") or "error")
                     low = text.lower()
-                    if "not logged in" in low or "/login" in low or "oauth token" in low:
-                        raise OAIError(503, "Subscription not configured: save a claude setup-token token in /admin.",
+                    if any(k in low for k in ("not logged in", "/login", "authenticat", "oauth", "401", "token is invalid",
+                                              "token has expired", "invalid api key", "unauthorized")):
+                        raise OAIError(503, "Claude account signed out: claude setup-token token missing or expired.",
                                        "api_error", code="subscription_not_configured")
                     if "limit" in low or "rate" in low:
-                        raise OAIError(429, text, "rate_limit_error", code="rate_limit_exceeded")
+                        err = OAIError(429, text, "rate_limit_error", code="rate_limit_exceeded")
+                        err.resets_at = limits.get("resetsAt")
+                        raise err
                     raise OAIError(502, text, "api_error")
                 if not streamed and o.get("result"):
                     yield "text", o["result"]
@@ -492,7 +543,7 @@ async def list_models(request: Request):
     if codex_backend.ENABLED:
         try:
             data += [{"id": m["id"], "object": "model", "created": now, "owned_by": "openai"}
-                     for m in await codex_backend.server.list_models()]
+                     for m in await codex_backend.list_models()]
         except Exception:
             pass  # Continue serving Claude when Codex is unavailable or signed out.
     return {"object": "list", "data": data}

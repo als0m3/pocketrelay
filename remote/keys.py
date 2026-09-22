@@ -1,4 +1,4 @@
-"""API keys (/v1) and CLI subscription token, stored in data/.
+"""API keys (/v1), stored in data/.
 
 Only SHA-256 hashes of keys are stored, never plaintext.
 The key value is displayed only once, when created.
@@ -13,7 +13,6 @@ import time
 from .config import DATA
 
 KEYS_FILE = DATA / "api_keys.json"
-CLAUDE_TOKEN_FILE = DATA / "claude_oauth_token"
 _lock = threading.Lock()
 
 
@@ -78,25 +77,3 @@ def verify(key: str) -> dict | None:
                 _save(items)
                 return public(k)
     return None
-
-
-# ---------- subscription token (claude setup-token) ----------
-
-def claude_token() -> str | None:
-    return CLAUDE_TOKEN_FILE.read_text().strip() if CLAUDE_TOKEN_FILE.exists() else None
-
-
-def set_claude_token(token: str | None):
-    if not token:
-        CLAUDE_TOKEN_FILE.unlink(missing_ok=True)
-        return
-    DATA.mkdir(parents=True, exist_ok=True)
-    CLAUDE_TOKEN_FILE.write_text(token.strip())
-    CLAUDE_TOKEN_FILE.chmod(0o600)
-
-
-def claude_token_status() -> dict:
-    tok = claude_token()
-    if not tok:
-        return {"set": False}
-    return {"set": True, "masked": tok[:14] + "…" + tok[-4:], "updated": CLAUDE_TOKEN_FILE.stat().st_mtime}

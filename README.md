@@ -117,10 +117,10 @@ The server can execute code on your machine through Claude. It binds to `127.0.0
 On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v1` and the **`/admin` console**; Claude Code sessions are disabled with `REMOTE_ENABLE_SESSIONS=0`.
 
 - **`/admin` console** (OIDC SSO, administrators allowlisted by email or Keycloak group/role; master-token recovery):
-  - save and test a subscription token generated with `claude setup-token` on your Mac;
-  - create/revoke `sk-cr-…` API keys, stored as hashes and displayed only once;
-  - connect the Codex ChatGPT account with a device code (server credentials in `/data/codex`), test it and view quotas;
-  - view 5-hour / weekly quotas and activity.
+  - **Multiple accounts per provider**, ordered by priority: Claude (paste and test a `claude setup-token` token) and ChatGPT/Codex (device-code login, isolated `CODEX_HOME` and app-server per account);
+  - **Automatic failover**: quota/authentication failure before the first output pauses the account (until quota reset or 15 minutes, or 10 minutes for authentication) and retries the next account;
+  - per-account quota meters, testing, activation, renaming, token replacement/reconnection and deletion; system accounts use host login;
+  - `sk-cr-…` API keys stored as hashes, displayed once, with Python / curl / Open WebUI examples.
 - **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
 
 ```bash

@@ -1,4 +1,4 @@
-"""Admin console (/admin): API keys, subscription token and quotas.
+"""Admin console (/admin): Claude/Codex subscription accounts, API keys and quotas.
 
 Use OIDC (Keycloak, etc.) when REMOTE_OIDC_ISSUER is configured, otherwise
 use the master token for login or recovery. Sessions use signed cookies;
@@ -12,7 +12,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
-from . import codex_backend, keys, openai_compat
+from . import accounts, codex_backend, keys, openai_compat
 from .config import ADMIN_EMAILS, ADMIN_GROUPS, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, STATIC, TOKEN
 
 router = APIRouter(prefix="/admin")
@@ -113,51 +113,163 @@ async def logout(request: Request):
 @router.get("/api/state")
 async def state(request: Request):
     u = require_admin(request)
-    return {"user": u, "keys": keys.list_keys(), "claude_token": keys.claude_token_status(),
-            "limits": openai_compat.LAST_LIMITS, "stats": openai_compat.STATS, "codex": await codex_state()}
+    codex_accs = [a for a in accounts.listing("codex") if a["enabled"]] if codex_backend.ENABLED else []
+    await asyncio.gather(*(_refresh_identity(a) for a in codex_accs))
+    return {
+        "user": u,
+        "keys": keys.list_keys(),
+        "stats": openai_compat.STATS,
+        "codex_enabled": codex_backend.ENABLED,
+        "accounts": {p: [accounts.public(a) for a in accounts.listing(p)] for p in accounts.PROVIDERS},
+    }
 
 
-async def codex_state() -> dict:
-    if not codex_backend.ENABLED:
-        return {"enabled": False}
+async def _refresh_identity(acc: dict):
+    """ChatGPT account email and plan from account/read, cached in state."""
+    srv = codex_backend.server_for(acc)
     try:
-        acc = await asyncio.wait_for(codex_backend.account(), 15)
+        res = await asyncio.wait_for(codex_backend.account(srv), 10)
+        accounts.state(acc["id"])["identity"] = res.get("account")
+        if srv.limits:
+            accounts.record_limits(acc, srv.limits)
     except Exception as e:
-        return {"enabled": True, "error": str(e)}
-    return {"enabled": True, "account": acc.get("account"), "limits": codex_backend.LAST_LIMITS}
+        accounts.state(acc["id"])["identity_error"] = str(e)[:200]
 
 
-@router.post("/api/codex/login")
-async def codex_login(request: Request):
-    """ChatGPT device-code login: the administrator opens the URL and enters the code."""
-    require_admin(request, mutating=True)
+def _account(acc_id: str) -> dict:
     try:
-        return await codex_backend.start_device_login()
+        return accounts.get(acc_id)
+    except KeyError:
+        raise HTTPException(404, "Unknown account")
+
+
+def _check_claude_token(tok: str):
+    if not tok.startswith("sk-ant-"):
+        raise HTTPException(400, "Invalid claude setup-token token: expected the sk-ant- prefix.")
+
+
+@router.post("/api/accounts")
+async def add_account(request: Request):
+    require_admin(request, mutating=True)
+    body = await request.json()
+    provider, label = body.get("provider"), str(body.get("label", "")).strip()
+    if provider == "claude":
+        tok = str(body.get("token", "")).strip()
+        _check_claude_token(tok)
+        acc = accounts.add_claude(label or "Claude account", tok)
+        return {"account": accounts.public(acc), "test": await _test(acc)}
+    if provider == "codex":
+        if not codex_backend.ENABLED:
+            raise HTTPException(400, "Codex is not installed on this server.")
+        acc = accounts.add_codex(label or "ChatGPT account")
+        return {"account": accounts.public(acc), "login": await _device_login(acc)}
+    raise HTTPException(400, "Unknown provider")
+
+
+async def _device_login(acc: dict) -> dict:
+    try:
+        return await codex_backend.start_device_login(codex_backend.server_for(acc))
     except codex_backend.CodexError as e:
         raise HTTPException(502, e.message)
 
 
-@router.post("/api/codex/logout")
-async def codex_logout(request: Request):
+@router.post("/api/accounts/{acc_id}/login")
+async def relogin(acc_id: str, request: Request):
     require_admin(request, mutating=True)
-    await codex_backend.logout()
+    acc = _account(acc_id)
+    if acc["provider"] != "codex":
+        raise HTTPException(400, "Device-code login is only available for Codex accounts")
+    accounts.resume(acc_id)
+    return await _device_login(acc)
+
+
+@router.put("/api/accounts/{acc_id}/token")
+async def replace_token(acc_id: str, request: Request):
+    require_admin(request, mutating=True)
+    acc = _account(acc_id)
+    if acc["provider"] != "claude" or acc["system"]:
+        raise HTTPException(400, "Only added Claude accounts have a token")
+    tok = str((await request.json()).get("token", "")).strip()
+    _check_claude_token(tok)
+    accounts.set_token(acc_id, tok)
+    return {"account": accounts.public(acc), "test": await _test(acc)}
+
+
+@router.patch("/api/accounts/{acc_id}")
+async def patch_account(acc_id: str, request: Request):
+    require_admin(request, mutating=True)
+    _account(acc_id)
+    acc = accounts.update(acc_id, await request.json())
+    if not acc["enabled"] and acc["provider"] == "codex":
+        await codex_backend.stop_account(acc_id)  # Release process memory.
+    return accounts.public(acc)
+
+
+@router.post("/api/accounts/{acc_id}/move")
+async def move_account(acc_id: str, request: Request):
+    require_admin(request, mutating=True)
+    _account(acc_id)
+    accounts.move(acc_id, -1 if (await request.json()).get("delta", 1) < 0 else 1)
     return {"ok": True}
 
 
-@router.post("/api/codex/test")
-async def codex_test(request: Request):
+@router.post("/api/accounts/{acc_id}/resume")
+async def resume_account(acc_id: str, request: Request):
     require_admin(request, mutating=True)
-    t0 = time.time()
+    _account(acc_id)
+    accounts.resume(acc_id)
+    return {"ok": True}
+
+
+@router.post("/api/accounts/{acc_id}/logout")
+async def logout_account(acc_id: str, request: Request):
+    require_admin(request, mutating=True)
+    acc = _account(acc_id)
+    if acc["provider"] == "codex":
+        await codex_backend.logout(codex_backend.server_for(acc))
+        accounts.state(acc_id).pop("identity", None)
+    return {"ok": True}
+
+
+@router.delete("/api/accounts/{acc_id}")
+async def delete_account(acc_id: str, request: Request):
+    require_admin(request, mutating=True)
+    _account(acc_id)
+    await codex_backend.stop_account(acc_id)
     try:
-        models = await codex_backend.server.list_models()
-        model = next((m["id"] for m in models if "luna" in m["id"]), None) or await codex_backend.server.default_model()
-        text = ""
-        async for kind, val in codex_backend.run_codex("Reply with exactly: pong", [{"type": "text", "text": "ping"}], model, "low"):
+        accounts.remove(acc_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@router.post("/api/accounts/{acc_id}/test")
+async def test_account(acc_id: str, request: Request):
+    require_admin(request, mutating=True)
+    return await _test(_account(acc_id))
+
+
+async def _test(acc: dict) -> dict:
+    """Make a real ping/pong request on this account, without failover."""
+    t0 = time.time()
+    text, model = "", ""
+    try:
+        if acc["provider"] == "claude":
+            model = "haiku"
+            gen = openai_compat.run_claude("Reply with exactly: pong", [{"type": "text", "text": "ping"}], model, "low",
+                                           accounts.token(acc), lambda lim: accounts.record_limits(acc, lim))
+        else:
+            models = await codex_backend.list_models()
+            model = next((m["id"] for m in models if "luna" in m["id"]), None) or await codex_backend.default_model()
+            gen = openai_compat._codex("Reply with exactly: pong", [{"type": "text", "text": "ping"}], model, "low", None, acc)
+        async for kind, val in gen:
             if kind == "text":
                 text += val
+        accounts.record_success(acc)
         return {"ok": True, "reply": text.strip(), "model": model, "seconds": round(time.time() - t0, 1)}
-    except codex_backend.CodexError as e:
-        return {"ok": False, "error": e.message, "seconds": round(time.time() - t0, 1)}
+    except openai_compat.OAIError as e:
+        accounts.record_failure(acc, openai_compat._failure_kind(e), e.message, getattr(e, "resets_at", None))
+        return {"ok": False, "error": e.message, "model": model, "seconds": round(time.time() - t0, 1)}
 
 
 @router.post("/api/keys")
@@ -184,26 +296,3 @@ async def delete(key_id: str, request: Request):
     return {"ok": True}
 
 
-@router.put("/api/claude-token")
-async def put_claude_token(request: Request):
-    require_admin(request, mutating=True)
-    tok = str((await request.json()).get("token", "")).strip()
-    if tok and not tok.startswith("sk-ant-"):
-        raise HTTPException(400, "Invalid claude setup-token token: expected the sk-ant- prefix")
-    keys.set_claude_token(tok or None)
-    return keys.claude_token_status()
-
-
-@router.post("/api/test")
-async def test(request: Request):
-    """Make a small real request to verify the subscription token."""
-    require_admin(request, mutating=True)
-    t0 = time.time()
-    try:
-        text = ""
-        async for kind, val in openai_compat.run_claude("Reply with exactly: pong", [{"type": "text", "text": "ping"}], "haiku", "low"):
-            if kind == "text":
-                text += val
-        return {"ok": True, "reply": text.strip(), "seconds": round(time.time() - t0, 1)}
-    except openai_compat.OAIError as e:
-        return {"ok": False, "error": e.message, "seconds": round(time.time() - t0, 1)}

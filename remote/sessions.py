@@ -16,7 +16,7 @@ import uuid
 from collections import deque
 from pathlib import Path
 
-from . import history, keys
+from . import accounts, history
 from .config import CLAUDE_BIN, DATA, KEEP_API_KEY
 
 SESSIONS_FILE = DATA / "sessions.json"
@@ -30,16 +30,16 @@ EFFORTS = ["", "low", "medium", "high", "xhigh", "max"]
 EDITABLE = {"name", "model", "permission_mode", "effort", "append_system_prompt", "pinned"}
 
 
-def child_env() -> dict:
+def child_env(token: str | None = None) -> dict:
     env = dict(os.environ)
     drop = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT"]
     if not KEEP_API_KEY:
         drop += ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
     for k in drop:
         env.pop(k, None)
-    # A saved long-lived subscription token takes precedence over host login.
-    if tok := keys.claude_token():
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = tok
+    # Use the selected account token, falling back to host login.
+    if token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
     env.setdefault("DISABLE_AUTOUPDATER", "1")
     return env
 
@@ -164,7 +164,7 @@ class Session:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env=child_env(),
+                env=child_env(accounts.session_token()),
                 limit=64 * 1024 * 1024,
             )
             proc = self.proc
