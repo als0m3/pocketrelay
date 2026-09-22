@@ -92,9 +92,30 @@ def is_claude(model: str) -> bool:
     return model.startswith("claude") or model.split("[")[0] in ALIASES
 
 
+def split_account(model: str) -> tuple[dict | None, str]:
+    """Resolve account/model into (account, model), otherwise (None, model)."""
+    head, sep, rest = model.partition("/")
+    if sep:
+        try:
+            return accounts.get(head), rest
+        except KeyError:
+            pass
+    return None, model
+
+
 async def resolve_model(model: str | None) -> str:
-    """Resolve model names: Claude aliases/claude-* and Codex IDs/OpenAI-style names."""
-    m = _strip(model)
+    """Resolve a requested model while preserving its account prefix."""
+    acc, m = split_account(_strip(model))
+    real = await _resolve_plain(m)
+    if acc:
+        if acc["provider"] != ("claude" if is_claude(real) else "codex"):
+            raise OAIError(400, f"Model {m} does not belong to account {acc['label']}.", param="model")
+        return f"{acc['id']}/{real}"
+    return real
+
+
+async def _resolve_plain(m: str) -> str:
+    """Use Claude for aliases/claude-*; Codex for its IDs and OpenAI-style names."""
     if m and is_claude(m):
         return m
     if codex_backend.ENABLED:
@@ -122,15 +143,23 @@ async def run_llm(system: str, blocks: list[dict], model: str, effort: str | Non
     """Route to a backend and account using the same text/done event stream.
 
     Before any text is emitted, quota/authentication failures pause
-    the account and retry the request with the next account.
+    the account and retry the next one. Account-prefixed model
+    names, such as <id>/sonnet, use only that account.
     """
+    pinned, model = split_account(model)
     provider = "claude" if is_claude(model) else "codex"
+    if pinned and not pinned["enabled"]:
+        raise OAIError(503, f"Account {pinned['label']} is disabled in the console.", "api_error",
+                       code="account_disabled")
     if provider == "codex" and effort in ("minimal", "none"):
         effort = "low"  # niveaux absents chez Codex
     tried: set[str] = set()
     last_error: OAIError | None = None
     while True:
-        acc = accounts.pick(provider, tried)
+        if pinned:
+            acc = None if pinned["id"] in tried else pinned
+        else:
+            acc = accounts.pick(provider, tried)
         if acc is None:
             raise last_error or OAIError(503, f"No {provider} account available: add one in /admin.",
                                          "api_error", code="no_account_available")
@@ -535,17 +564,38 @@ def sse(obj) -> str:
 
 # ---------- /v1/models ----------
 
+CLAUDE_NAMES = {"opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku", "fable": "Fable"}
+LIST_AUTO = os.environ.get("REMOTE_MODELS_AUTO", "1") == "1"            # « Auto · … » : bascule entre comptes
+LIST_PER_ACCOUNT = os.environ.get("REMOTE_MODELS_PER_ACCOUNT", "1") == "1"  # Account-prefixed entries pin the account.
+
+
 @router.get("/models")
 async def list_models(request: Request):
     check_auth(request)
     now = int(time.time())
-    data = [{"id": m, "object": "model", "created": now, "owned_by": "anthropic"} for m in MODELS]
+
+    def entry(mid, name, owner):
+        return {"id": mid, "name": name, "object": "model", "created": now, "owned_by": owner}
+
+    codex_models = []
     if codex_backend.ENABLED:
         try:
-            data += [{"id": m["id"], "object": "model", "created": now, "owned_by": "openai"}
-                     for m in await codex_backend.list_models()]
+            codex_models = await codex_backend.list_models()
         except Exception:
             pass  # Continue serving Claude when Codex is unavailable or signed out.
+    data = []
+    if LIST_AUTO:
+        data += [entry(m, f"Auto · {CLAUDE_NAMES[m]}", "anthropic") for m in CLAUDE_NAMES]
+        data += [entry(m["id"], f"Auto · {m.get('displayName') or m['id']}", "openai") for m in codex_models]
+    if LIST_PER_ACCOUNT:
+        for acc in accounts.listing("claude"):
+            if acc["enabled"]:
+                data += [entry(f"{acc['id']}/{m}", f"{acc['label']} · {n}", "anthropic") for m, n in CLAUDE_NAMES.items()]
+        for acc in accounts.listing("codex") if codex_models else []:
+            if acc["enabled"]:
+                data += [entry(f"{acc['id']}/{m['id']}", f"{acc['label']} · {m.get('displayName') or m['id']}", "openai")
+                         for m in codex_models]
+    # Full model IDs remain accepted even when omitted from the catalog.
     return {"object": "list", "data": data}
 
 
