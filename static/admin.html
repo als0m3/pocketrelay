@@ -74,6 +74,20 @@
     <div id="limits" class="grid" style="margin-top:10px"></div>
   </section>
 
+  <section class="card" id="codex-card" hidden>
+    <h2>ChatGPT subscription (Codex)</h2>
+    <p class="sub"><code>gpt-*</code> models are served through Codex CLI. Device-code login gives the server its own credentials.</p>
+    <div id="cx-state" style="margin-bottom:10px"></div>
+    <div class="row">
+      <button id="cx-login" class="primary">Connect a ChatGPT account</button>
+      <button id="cx-test">Test</button>
+      <button id="cx-logout" class="link">Disconnect</button>
+    </div>
+    <div id="cx-device" class="newkey" hidden></div>
+    <p id="cx-out" class="sub" style="margin-top:8px"></p>
+    <div id="cx-limits" class="grid" style="margin-top:10px"></div>
+  </section>
+
   <section class="card">
     <h2>API keys</h2>
     <p class="sub">One key per client (Open WebUI, scripts, apps…). OpenAI-compatible: <code id="base-url"></code></p>
@@ -164,12 +178,57 @@ async function load() {
         : `<button class="danger" data-rev="${k.id}">Revoke</button>`}</td>
     </tr>`).join("");
   $("#nokeys").hidden = s.keys.length > 0;
+  renderCodex(s.codex);
   const st = s.stats;
   $("#stats").innerHTML = `<div class="stat"><b>${st.requests}</b><span>requests since startup</span></div>
     <div class="stat"><b>${st.errors}</b><span>erreurs</span></div>
     <div class="stat"><b>${(st.output_tokens / 1000).toFixed(1)}k</b><span>tokens generated</span></div>
     <div class="stat"><b>${s.keys.filter(k => !k.revoked).length}</b><span>keys actives</span></div>`;
 }
+
+function renderCodex(cx) {
+  $("#codex-card").hidden = !cx?.enabled;
+  if (!cx?.enabled) return;
+  const a = cx.account;
+  $("#cx-state").innerHTML = cx.error ? `<span class="bad">● ${esc(cx.error)}</span>`
+    : a ? `<span class="ok">● Connected</span> <span class="muted">${esc(a.email || a.type)}${a.planType ? " · plan " + esc(a.planType) : ""}</span>`
+    : `<span class="bad">● No account</span> <span class="muted">— gpt-* models will fail until an account is connected.</span>`;
+  $("#cx-login").textContent = a ? "Switch account" : "Connect a ChatGPT account";
+  const l = cx.limits || {};
+  const wins = [["Primary window", l.primary], ["Secondary window", l.secondary]].filter(([, w]) => w);
+  $("#cx-limits").innerHTML = wins.map(([n, w]) => {
+    const p = Math.round(w.usedPercent || 0), dur = w.windowDurationMins ? (w.windowDurationMins >= 1440 ? `${Math.round(w.windowDurationMins / 1440)} j` : `${Math.round(w.windowDurationMins / 60)} h`) : "";
+    return `<div class="stat"><span>${n}${dur ? " (" + dur + ")" : ""}</span><b>${p} %</b><div class="bar"><i class="${p >= 90 ? "high" : p >= 70 ? "mid" : ""}" style="width:${Math.min(p, 100)}%"></i></div><span>↻ ${fmt(w.resetsAt)}</span></div>`;
+  }).join("");
+}
+$("#cx-login").onclick = async () => {
+  try {
+    const r = await call("/admin/api/codex/login", "POST");
+    const url = r.verificationUrl || r.verificationUri || r.verification_url || "https://auth.openai.com/codex/device";
+    const box = $("#cx-device");
+    box.hidden = false;
+    box.innerHTML = `<b>1.</b> Open <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a> and sign in to ChatGPT<br><b>2.</b> Enter the code: <code style="font-size:18px;letter-spacing:.1em">${esc(r.userCode || "?")}</code><br><span class="muted">This page updates when the connection is confirmed.</span>`;
+    const t0 = Date.now();
+    const poll = setInterval(async () => {
+      const s = await call("/admin/api/state").catch(() => null);
+      if (s?.codex?.account || Date.now() - t0 > 15 * 60 * 1000) { clearInterval(poll); box.hidden = true; load(); }
+    }, 4000);
+  } catch (e) { toast(e.message, 4000); }
+};
+$("#cx-logout").onclick = async () => {
+  if (!confirm("Disconnect the ChatGPT account from this server?")) return;
+  await call("/admin/api/codex/logout", "POST"); load();
+};
+$("#cx-test").onclick = async () => {
+  const out = $("#cx-out");
+  out.className = "sub"; out.textContent = "Test running…";
+  try {
+    const r = await call("/admin/api/codex/test", "POST");
+    out.className = r.ok ? "ok" : "bad";
+    out.textContent = r.ok ? `✓ ${r.model} replied “${r.reply}” in ${r.seconds} s` : `✗ ${r.error}`;
+    load();
+  } catch (e) { out.className = "bad"; out.textContent = "✗ " + e.message; }
+};
 
 $("#keys").onclick = async e => {
   const rev = e.target.dataset.rev, del = e.target.dataset.del;

@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import admin, history
+from . import admin, codex_backend, history
 from .openai_compat import OAIError, oai_error_handler, router as openai_router
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     manager = Manager()
     yield
     await manager.shutdown()
+    await codex_backend.server.stop()
 
 
 app = FastAPI(title="CustomRemote", version="0.1.0", lifespan=lifespan,

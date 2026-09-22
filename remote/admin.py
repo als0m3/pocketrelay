@@ -5,13 +5,14 @@ use the master token for login or recovery. Sessions use signed cookies;
 all mutations require the X-Admin header to prevent CSRF.
 """
 
+import asyncio
 import secrets
 import time
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
-from . import keys, openai_compat
+from . import codex_backend, keys, openai_compat
 from .config import ADMIN_EMAILS, ADMIN_GROUPS, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, STATIC, TOKEN
 
 router = APIRouter(prefix="/admin")
@@ -113,7 +114,50 @@ async def logout(request: Request):
 async def state(request: Request):
     u = require_admin(request)
     return {"user": u, "keys": keys.list_keys(), "claude_token": keys.claude_token_status(),
-            "limits": openai_compat.LAST_LIMITS, "stats": openai_compat.STATS}
+            "limits": openai_compat.LAST_LIMITS, "stats": openai_compat.STATS, "codex": await codex_state()}
+
+
+async def codex_state() -> dict:
+    if not codex_backend.ENABLED:
+        return {"enabled": False}
+    try:
+        acc = await asyncio.wait_for(codex_backend.account(), 15)
+    except Exception as e:
+        return {"enabled": True, "error": str(e)}
+    return {"enabled": True, "account": acc.get("account"), "limits": codex_backend.LAST_LIMITS}
+
+
+@router.post("/api/codex/login")
+async def codex_login(request: Request):
+    """ChatGPT device-code login: the administrator opens the URL and enters the code."""
+    require_admin(request, mutating=True)
+    try:
+        return await codex_backend.start_device_login()
+    except codex_backend.CodexError as e:
+        raise HTTPException(502, e.message)
+
+
+@router.post("/api/codex/logout")
+async def codex_logout(request: Request):
+    require_admin(request, mutating=True)
+    await codex_backend.logout()
+    return {"ok": True}
+
+
+@router.post("/api/codex/test")
+async def codex_test(request: Request):
+    require_admin(request, mutating=True)
+    t0 = time.time()
+    try:
+        models = await codex_backend.server.list_models()
+        model = next((m["id"] for m in models if "luna" in m["id"]), None) or await codex_backend.server.default_model()
+        text = ""
+        async for kind, val in codex_backend.run_codex("Reply with exactly: pong", [{"type": "text", "text": "ping"}], model, "low"):
+            if kind == "text":
+                text += val
+        return {"ok": True, "reply": text.strip(), "model": model, "seconds": round(time.time() - t0, 1)}
+    except codex_backend.CodexError as e:
+        return {"ok": False, "error": e.message, "seconds": round(time.time() - t0, 1)}
 
 
 @router.post("/api/keys")

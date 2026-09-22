@@ -71,7 +71,14 @@ client.chat.completions.create(model="sonnet", messages=[{"role": "user", "conte
 | `POST /v1/completions` | legacy API (prompt, stop, echo, stream) |
 | embeddings, audio, images, files… | 404 with an OpenAI-style error |
 
-Models: `opus`, `sonnet`, `haiku`, `fable` or a full `claude-*` ID. Other names (`gpt-4o`…) route to `REMOTE_OAI_MODEL` (default: `sonnet`).
+Two providers selected by model name:
+
+| Models | Backend | Subscription |
+|---|---|---|
+| `opus`, `sonnet`, `haiku`, `fable`, `claude-*` | ephemeral `claude -p` | Claude (`claude login` / `claude setup-token`) |
+| `gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`… (catalog from Codex) | persistent `codex app-server`, ephemeral thread per request | ChatGPT (`codex login`) |
+
+Unknown OpenAI-style names (`gpt-4o`, `o3`, `codex`…) use the default Codex model (`REMOTE_CODEX_MODEL` or its advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex replaces system instructions with `baseInstructions`, disables model tools and uses a read-only sandbox. Strict `json_schema` response formats are enforced through `outputSchema`. PDF input is unsupported.
 
 Each request launches an ephemeral `claude -p` process **without Claude Code tools**, using `--safe-mode` (no CLAUDE.md, skills or MCP) and the client system prompt. CLI limitations:
 - around 2–4 seconds of startup time per request;
@@ -110,6 +117,7 @@ On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v
 - **`/admin` console** (OIDC SSO, administrators allowlisted by email or Keycloak group/role; master-token recovery):
   - save and test a subscription token generated with `claude setup-token` on your Mac;
   - create/revoke `sk-cr-…` API keys, stored as hashes and displayed only once;
+  - connect the Codex ChatGPT account with a device code (server credentials in `/data/codex`), test it and view quotas;
   - view 5-hour / weekly quotas and activity.
 - **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
 

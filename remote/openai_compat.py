@@ -23,7 +23,7 @@ from contextlib import aclosing
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import keys
+from . import codex_backend, keys
 from .config import CLAUDE_BIN, DATA, TOKEN
 from .sessions import child_env
 
@@ -81,14 +81,56 @@ def new_id(prefix: str) -> str:
     return f"{prefix}{uuid.uuid4().hex[:24]}"
 
 
-def resolve_model(model: str | None) -> str:
+def _strip(model: str | None) -> str:
     m = (model or "").strip()
-    for prefix in ("anthropic/", "claude-code/", "claude/"):
+    for prefix in ("anthropic/", "claude-code/", "claude/", "openai/"):
         if m.startswith(prefix):
             m = m[len(prefix):]
-    if not m or not (m.startswith("claude") or m.split("[")[0] in ALIASES):
-        return DEFAULT_MODEL  # gpt-4o and similar names use the default model.
     return m
+
+
+def is_claude(model: str) -> bool:
+    return model.startswith("claude") or model.split("[")[0] in ALIASES
+
+
+async def resolve_model(model: str | None) -> str:
+    """Resolve model names: Claude aliases/claude-* and Codex IDs/OpenAI-style names."""
+    m = _strip(model)
+    if m and is_claude(m):
+        return m
+    if codex_backend.ENABLED:
+        try:
+            ids = {x["id"] for x in await codex_backend.server.list_models()}
+        except Exception:
+            ids = set()
+        if m in ids:
+            return m
+        if m == "codex" or m.startswith(("codex/", "gpt", "o1", "o3", "o4", "chatgpt")):
+            sub = m.removeprefix("codex/")
+            return sub if sub in ids else await codex_backend.server.default_model()
+    return DEFAULT_MODEL  # Unknown names use the default Claude model.
+
+
+async def run_llm(system: str, blocks: list[dict], model: str, effort: str | None, schema: dict | None = None):
+    """Route to the correct backend using the same text/done event stream."""
+    if is_claude(model):
+        async with aclosing(run_claude(system, blocks, model, EFFORT_MAP.get(effort or ""))) as inner:
+            async for ev in inner:
+                yield ev
+        return
+    if effort in ("minimal", "none"):
+        effort = "low"  # niveaux absents chez Codex
+    try:
+        async with aclosing(codex_backend.run_codex(system, blocks, model, effort or None, schema)) as inner:
+            async for ev in inner:
+                if ev[0] == "done":
+                    STATS["requests"] += 1
+                    STATS["output_tokens"] += ev[1]["usage"].get("output_tokens") or 0
+                yield ev
+    except codex_backend.CodexError as e:
+        STATS["errors"] += 1
+        status = {"rate_limit_error": 429, "authentication_error": 503, "invalid_request_error": 400}.get(e.kind, 502)
+        raise OAIError(status, e.message, e.kind)
 
 
 # ---------- content conversion ----------
@@ -443,7 +485,14 @@ def sse(obj) -> str:
 async def list_models(request: Request):
     check_auth(request)
     now = int(time.time())
-    return {"object": "list", "data": [{"id": m, "object": "model", "created": now, "owned_by": "anthropic"} for m in MODELS]}
+    data = [{"id": m, "object": "model", "created": now, "owned_by": "anthropic"} for m in MODELS]
+    if codex_backend.ENABLED:
+        try:
+            data += [{"id": m["id"], "object": "model", "created": now, "owned_by": "openai"}
+                     for m in await codex_backend.server.list_models()]
+        except Exception:
+            pass  # Continue serving Claude when Codex is unavailable or signed out.
+    return {"object": "list", "data": data}
 
 
 @router.get("/models/{model_id:path}")
@@ -492,14 +541,18 @@ def legacy_functions(body: dict) -> tuple[list, object]:
 @router.post("/chat/completions")
 async def chat_completions(request: Request):
     body = await read_json(request)
-    model = resolve_model(body.get("model"))
+    model = await resolve_model(body.get("model"))
     system, turns = await chat_turns(body.get("messages"))
     tools, choice = legacy_functions(body)
     use_tools = bool(tools) and choice != "none"
     extra = [tools_prompt(tools, choice, body.get("parallel_tool_calls", True)) if use_tools else "",
              format_prompt(body.get("response_format"))]
     sys_prompt, blocks = await build_prompt(turns, system, extra)
-    effort = EFFORT_MAP.get(body.get("reasoning_effort") or "")
+    effort = body.get("reasoning_effort")
+    rf = body.get("response_format") or {}
+    js = rf.get("json_schema") or {}
+    # Match the OpenAI API: enforce schemas natively only in strict mode.
+    schema = js.get("schema") if rf.get("type") == "json_schema" and js.get("strict") else None
     stops = as_stop_list(body.get("stop"))
     n = int(body.get("n") or 1)
     json_mode = (body.get("response_format") or {}).get("type") in ("json_object", "json_schema")
@@ -509,13 +562,13 @@ async def chat_completions(request: Request):
         if n != 1:
             raise OAIError(400, "n > 1 is not supported with stream=true.", param="n")
         include_usage = bool((body.get("stream_options") or {}).get("include_usage"))
-        return StreamingResponse(stream_chat(cid, created, model, sys_prompt, blocks, effort, stops, use_tools, include_usage),
+        return StreamingResponse(stream_chat(cid, created, model, sys_prompt, blocks, effort, stops, use_tools, include_usage, schema),
                                  media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
     async def one(index: int):
         f = Filter(stops, use_tools)
         out, info = [], {}
-        async with aclosing(run_claude(sys_prompt, blocks, model, effort)) as stream_:
+        async with aclosing(run_llm(sys_prompt, blocks, model, effort, schema)) as stream_:
             async for kind, val in stream_:
                 if kind == "text":
                     out.append(f.feed(val))
@@ -549,7 +602,7 @@ async def chat_completions(request: Request):
     }
 
 
-async def stream_chat(cid, created, model, sys_prompt, blocks, effort, stops, use_tools, include_usage):
+async def stream_chat(cid, created, model, sys_prompt, blocks, effort, stops, use_tools, include_usage, schema=None):
     def chunk(delta: dict, finish=None, usage=None, choices=True):
         o = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": model,
              "system_fingerprint": None,
@@ -562,7 +615,7 @@ async def stream_chat(cid, created, model, sys_prompt, blocks, effort, stops, us
     f = Filter(stops, use_tools)
     info = {}
     try:
-        async with aclosing(run_claude(sys_prompt, blocks, model, effort)) as stream_:
+        async with aclosing(run_llm(sys_prompt, blocks, model, effort, schema)) as stream_:
             async for kind, val in stream_:
                 if kind == "text":
                     if out := f.feed(val):
@@ -594,7 +647,7 @@ async def stream_chat(cid, created, model, sys_prompt, blocks, effort, stops, us
 @router.post("/completions")
 async def completions(request: Request):
     body = await read_json(request)
-    model = resolve_model(body.get("model"))
+    model = await resolve_model(body.get("model"))
     prompt = body.get("prompt", "")
     if isinstance(prompt, list):
         prompt = prompt[0] if prompt and isinstance(prompt[0], str) else ""
@@ -614,7 +667,7 @@ async def completions(request: Request):
             try:
                 if echo:
                     yield chunk(echo)
-                async with aclosing(run_claude(sys_prompt, blocks, model, None)) as stream_:
+                async with aclosing(run_llm(sys_prompt, blocks, model, None)) as stream_:
                     async for kind, val in stream_:
                         if kind == "text" and (out := f.feed(val)):
                             yield chunk(out)
@@ -629,7 +682,7 @@ async def completions(request: Request):
         return StreamingResponse(gen(), media_type="text/event-stream")
 
     f, parts, info = Filter(stops, False), [], {}
-    async with aclosing(run_claude(sys_prompt, blocks, model, None)) as stream_:
+    async with aclosing(run_llm(sys_prompt, blocks, model, None)) as stream_:
         async for kind, val in stream_:
             if kind == "text":
                 parts.append(f.feed(val))
@@ -684,7 +737,7 @@ async def responses_turns(inp) -> tuple[list[str], list[dict]]:
 @router.post("/responses")
 async def responses(request: Request):
     body = await read_json(request)
-    model = resolve_model(body.get("model"))
+    model = await resolve_model(body.get("model"))
     system, turns = await responses_turns(body.get("input", ""))
     prev_id = body.get("previous_response_id")
     if prev_id:
@@ -701,7 +754,8 @@ async def responses(request: Request):
     extra = [tools_prompt(tools, choice, body.get("parallel_tool_calls", True)) if use_tools else "",
              format_prompt(fmt if fmt and fmt.get("type") != "text" else None)]
     sys_prompt, blocks = await build_prompt(turns, system, extra)
-    effort = EFFORT_MAP.get((body.get("reasoning") or {}).get("effort") or "")
+    effort = (body.get("reasoning") or {}).get("effort")
+    schema = fmt.get("schema") if fmt and fmt.get("type") == "json_schema" and fmt.get("strict") else None
     json_mode = bool(fmt and fmt.get("type") in ("json_object", "json_schema"))
     rid, created = new_id("resp_"), int(time.time())
 
@@ -738,7 +792,7 @@ async def responses(request: Request):
     if not body.get("stream"):
         f, info = Filter([], use_tools), {}
         parts = []
-        async with aclosing(run_claude(sys_prompt, blocks, model, effort)) as stream_:
+        async with aclosing(run_llm(sys_prompt, blocks, model, effort, schema)) as stream_:
             async for kind, val in stream_:
                 if kind == "text":
                     parts.append(f.feed(val))
@@ -768,7 +822,7 @@ async def responses(request: Request):
                     + ev("response.content_part.added", item_id=msg_id, output_index=0, content_index=0, part=part))
 
         try:
-            async with aclosing(run_claude(sys_prompt, blocks, model, effort)) as stream_:
+            async with aclosing(run_llm(sys_prompt, blocks, model, effort, schema)) as stream_:
                 async for kind, val in stream_:
                     if kind == "done":
                         info = val
