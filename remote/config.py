@@ -17,6 +17,11 @@ ALLOWED_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1", "host.docker.internal
     h.strip() for h in os.environ.get("REMOTE_ALLOWED_HOSTS", "").split(",") if h.strip()
 }
 
+# Public URL when the reverse proxy rewrites Host (VPS to OKD router).
+PUBLIC_URL = os.environ.get("REMOTE_PUBLIC_URL", "").rstrip("/")
+if PUBLIC_URL:
+    ALLOWED_HOSTS.add(PUBLIC_URL.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0])
+
 CLAUDE_BIN = (
     os.environ.get("CLAUDE_BIN")
     or shutil.which("claude")

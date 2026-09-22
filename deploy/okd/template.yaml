@@ -10,10 +10,16 @@ parameters:
   - name: OPENWEBUI_IMAGE
     value: ghcr.io/open-webui/open-webui:v0.11.4
   - name: API_HOST
-    description: Gateway route hostname (/admin console and /v1)
+    description: Internal gateway route hostname (/admin console and /v1)
     required: true
   - name: CHAT_HOST
-    description: Open WebUI route hostname
+    description: Internal Open WebUI route hostname
+    required: true
+  - name: PUBLIC_API_HOST
+    description: Public gateway hostname behind the VPS reverse proxy
+    required: true
+  - name: PUBLIC_CHAT_HOST
+    description: Public Open WebUI hostname behind the VPS reverse proxy
     required: true
   - name: OIDC_ISSUER
     description: "Issuer OIDC, ex. https://keycloak.example/auth/realms/xxx"
@@ -58,7 +64,8 @@ objects:
               imagePullPolicy: Always
               ports: [{containerPort: 8787, name: http}]
               env:
-                - {name: REMOTE_ALLOWED_HOSTS, value: "${API_HOST},claude-api"}
+                - {name: REMOTE_ALLOWED_HOSTS, value: "${API_HOST},${PUBLIC_API_HOST},claude-api"}
+                - {name: REMOTE_PUBLIC_URL, value: "https://${PUBLIC_API_HOST}"}
                 - {name: REMOTE_HTTPS, value: "1"}
                 - {name: REMOTE_OAI_MODEL, value: "${DEFAULT_MODEL}"}
                 - {name: REMOTE_OIDC_ISSUER, value: "${OIDC_ISSUER}"}
@@ -118,7 +125,7 @@ objects:
               image: ${OPENWEBUI_IMAGE}
               ports: [{containerPort: 8080, name: http}]
               env:
-                - {name: WEBUI_URL, value: "https://${CHAT_HOST}"}
+                - {name: WEBUI_URL, value: "https://${PUBLIC_CHAT_HOST}"}
                 - {name: DATA_DIR, value: /app/backend/data}
                 - {name: HOME, value: /app/backend/data/home}
                 - {name: ENABLE_OLLAMA_API, value: "False"}
@@ -136,7 +143,7 @@ objects:
                 - {name: DEFAULT_USER_ROLE, value: pending}
                 - {name: OAUTH_PROVIDER_NAME, value: "${OIDC_PROVIDER_NAME}"}
                 - {name: OPENID_PROVIDER_URL, value: "${OIDC_ISSUER}/.well-known/openid-configuration"}
-                - {name: OPENID_REDIRECT_URI, value: "https://${CHAT_HOST}/oauth/oidc/callback"}
+                - {name: OPENID_REDIRECT_URI, value: "https://${PUBLIC_CHAT_HOST}/oauth/oidc/callback"}
                 - {name: OAUTH_CLIENT_ID, value: "${OIDC_CLIENT_ID}"}
                 - name: OAUTH_CLIENT_SECRET
                   valueFrom: {secretKeyRef: {name: custom-remote, key: oidc-client-secret}}

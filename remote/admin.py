@@ -13,7 +13,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
 from . import accounts, codex_backend, keys, openai_compat
-from .config import ADMIN_EMAILS, ADMIN_GROUPS, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, STATIC, TOKEN
+from .config import (ADMIN_EMAILS, ADMIN_GROUPS, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, PUBLIC_URL, STATIC,
+                     TOKEN)
 
 router = APIRouter(prefix="/admin")
 
@@ -77,9 +78,12 @@ async def auth_config(request: Request):
 async def login(request: Request):
     if not oauth:
         raise HTTPException(404, "OIDC is not configured")
-    redirect = str(request.url_for("oidc_callback"))
-    if request.headers.get("x-forwarded-proto") == "https":
-        redirect = redirect.replace("http://", "https://", 1)
+    if PUBLIC_URL:  # Behind the VPS, Host is internal: enforce the public URL.
+        redirect = f"{PUBLIC_URL}/admin/auth/callback"
+    else:
+        redirect = str(request.url_for("oidc_callback"))
+        if request.headers.get("x-forwarded-proto") == "https":
+            redirect = redirect.replace("http://", "https://", 1)
     return await oauth.oidc.authorize_redirect(request, redirect)
 
 

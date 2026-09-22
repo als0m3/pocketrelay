@@ -6,7 +6,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # Local secrets (not tracked): GHCR_TOKEN, GHCR_PULL_TOKEN, OIDC_CLIENT_SECRET
 [ -f deploy/okd/secrets.env ] && source deploy/okd/secrets.env
-: "${GHCR_TOKEN:?Missing GHCR_TOKEN (PAT with write:packages scope)}"
+# Without a PAT, use the gh token after gh auth refresh -s write:packages.
+if [ -z "${GHCR_TOKEN:-}" ] && gh auth status 2>&1 | grep -q "write:packages"; then GHCR_TOKEN="$(gh auth token)"; fi
+: "${GHCR_TOKEN:?Missing GHCR_TOKEN (PAT with write:packages, or gh auth refresh -s write:packages)}"
 USER_NAME=als0m3
 REPO="ghcr.io/${USER_NAME}/custom-remote"
 TAG="${1:-$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M)}"
