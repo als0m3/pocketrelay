@@ -78,7 +78,9 @@ Two providers selected by model name:
 | `opus`, `sonnet`, `haiku`, `fable`, `claude-*` | ephemeral `claude -p` | Claude (`claude login` / `claude setup-token`) |
 | `gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`… (catalog from Codex) | persistent `codex app-server`, ephemeral thread per request | ChatGPT (`codex login`) |
 
-Unknown OpenAI-style names (`gpt-4o`, `o3`, `codex`…) use the default Codex model (`REMOTE_CODEX_MODEL` or its advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex replaces system instructions with `baseInstructions`, disables model tools and uses a read-only sandbox. Strict `json_schema` response formats are enforced through `outputSchema`. PDF input is unsupported.
+Unknown OpenAI-style names (`gpt-4o`, `o3`, `codex`…) use the default Codex model (`REMOTE_CODEX_MODEL` or its advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex replaces system instructions with `baseInstructions`, disables model tools and uses a read-only sandbox. Strict `json_schema` response formats are enforced through `outputSchema`.
+
+**Codex PDF inputs** are converted with `pypdfium2`: extract text per page and render scanned/image pages as PNG (≤ 2048 pixels, `detail: high`). Configure `REMOTE_PDF_MODE` (`auto`, `images` for all pages, or `text`), `REMOTE_PDF_MAX_IMAGE_PAGES` (20) and `REMOTE_PDF_MAX_TEXT_CHARS` (400,000). Prefer `gpt-5.6-sol` or above for scans because `luna` makes OCR errors. Claude reads PDFs natively.
 
 Each request launches an ephemeral `claude -p` process **without Claude Code tools**, using `--safe-mode` (no CLAUDE.md, skills or MCP) and the client system prompt. CLI limitations:
 - around 2–4 seconds of startup time per request;

@@ -193,7 +193,10 @@ async def to_blocks(content) -> list[dict]:
                 raise OAIError(400, "Only inline file_data is supported for files.", param="file")
             if not data.startswith("data:"):
                 data = f"data:application/pdf;base64,{data}"
-            out.append(_data_url_block(data, "file"))
+            block = _data_url_block(data, "file")
+            if block["type"] == "document" and f.get("filename"):
+                block["title"] = f["filename"]
+            out.append(block)
         elif t in ("input_audio", "audio"):
             raise OAIError(400, "Audio input is not supported.", param="messages")
         else:

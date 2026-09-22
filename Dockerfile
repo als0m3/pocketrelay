@@ -21,7 +21,7 @@ RUN curl -fsSL "https://github.com/openai/codex/releases/download/rust-v${CODEX_
 
 WORKDIR /app
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn>=0.30" "authlib>=1.3" "httpx>=0.27" "itsdangerous>=2.2"
+RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn>=0.30" "authlib>=1.3" "httpx>=0.27" "itsdangerous>=2.2" "pypdfium2>=4.30" "pillow>=10"
 COPY remote ./remote
 COPY static ./static
 

@@ -12,6 +12,7 @@ import os
 import shutil
 import time
 
+from . import pdf
 from .config import DATA
 
 CODEX_BIN = os.environ.get("CODEX_BIN") or shutil.which("codex") or ""
@@ -147,6 +148,20 @@ class AppServer:
 server = AppServer()
 
 
+def expand_documents(blocks: list[dict]) -> list[dict]:
+    """Replace unsupported Codex PDF inputs with text and scanned-page images."""
+    out = []
+    for b in blocks:
+        if b["type"] == "document":
+            try:
+                out += pdf.convert(b["source"]["data"], b.get("title"))
+            except pdf.PdfError as e:
+                raise CodexError(str(e), "invalid_request_error")
+        else:
+            out.append(b)
+    return out
+
+
 def to_inputs(blocks: list[dict]) -> list[dict]:
     """Convert Anthropic blocks from the OpenAI layer into Codex UserInput."""
     out = []
@@ -159,9 +174,7 @@ def to_inputs(blocks: list[dict]) -> list[dict]:
         elif b["type"] == "image":
             src = b["source"]
             url = src.get("url") or f"data:{src['media_type']};base64,{src['data']}"
-            out.append({"type": "image", "url": url})
-        elif b["type"] == "document":
-            raise CodexError("The Codex backend does not support PDFs.", "invalid_request_error")
+            out.append({"type": "image", "url": url, **({"detail": b["detail"]} if b.get("detail") else {})})
     return out or [{"type": "text", "text": "(empty)"}]
 
 
@@ -173,6 +186,8 @@ async def run_codex(system: str, blocks: list[dict], model: str, effort: str | N
     tid = thread["id"]
     q: asyncio.Queue = asyncio.Queue()
     server.threads[tid] = q
+    if any(b["type"] == "document" for b in blocks):
+        blocks = await asyncio.to_thread(expand_documents, blocks)
     turn_params = {"threadId": tid, "input": to_inputs(blocks), "model": model}
     if effort:
         turn_params["effort"] = effort
