@@ -66,11 +66,10 @@ objects:
       template:
         metadata: {labels: {app: claude-api}}
         spec:
-          imagePullSecrets: [{name: ghcr-als0m3}]
           containers:
             - name: api
               image: ${IMAGE}
-              imagePullPolicy: Always
+              imagePullPolicy: IfNotPresent   # sideload.sh loads the per-commit tag onto the node.
               ports: [{containerPort: 8787, name: http}]
               env:
                 - {name: REMOTE_ALLOWED_HOSTS, value: "${API_HOST},${PUBLIC_API_HOST},claude-api"}

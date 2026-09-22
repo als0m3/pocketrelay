@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Deploy the gateway and Open WebUI to OKD.
 #   cp deploy/okd/params.env.example deploy/okd/params.env   # Then fill in values.
-#   OIDC_CLIENT_SECRET=… GHCR_PULL_TOKEN=… ./deploy/okd/deploy.sh
+#   ./deploy/okd/deploy.sh      (reads deploy/okd/secrets.env)
 set -euo pipefail
 cd "$(dirname "$0")"
-# Local secrets (not tracked): GHCR_TOKEN, GHCR_PULL_TOKEN, OIDC_CLIENT_SECRET
+# Local secrets (not tracked): GHCR_TOKEN, OIDC_CLIENT_SECRET
 [ -f secrets.env ] && source secrets.env
 CONTEXT="${CONTEXT:-default/api-cluster-example-test:6443/kube:admin}"
 NS="${NAMESPACE:-custom-remote}"
@@ -23,11 +23,9 @@ elif [ -n "${OIDC_CLIENT_SECRET:-}" ]; then
   oc_ patch secret custom-remote -p "{\"stringData\":{\"oidc-client-secret\":\"${OIDC_CLIENT_SECRET}\"}}"
 fi
 
-# Pull secret for the private image (read-only PAT with read:packages scope).
-if [ -n "${GHCR_PULL_TOKEN:-}" ]; then
-  oc_ create secret docker-registry ghcr-als0m3 --docker-server=ghcr.io \
-    --docker-username=als0m3 --docker-password="$GHCR_PULL_TOKEN" --dry-run=client -o yaml | oc_ apply -f -
-fi
+# Sideload the private image; no registry secret is stored in the cluster.
+IMAGE="$(grep '^IMAGE=' params.env | cut -d= -f2-)"
+[ "${SKIP_SIDELOAD:-0}" = "1" ] || CONTEXT="$CONTEXT" ./sideload.sh "$IMAGE"
 
 oc process --local -f template.yaml --param-file params.env --ignore-unknown-parameters | oc_ apply -f -
 
