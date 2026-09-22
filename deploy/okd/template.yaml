@@ -134,6 +134,7 @@ objects:
               ports: [{containerPort: 8080, name: http}]
               env:
                 - {name: WEBUI_URL, value: "https://${PUBLIC_CHAT_HOST}"}
+                - {name: CORS_ALLOW_ORIGIN, value: "https://${PUBLIC_CHAT_HOST}"}
                 - {name: DATA_DIR, value: /app/backend/data}
                 - {name: HOME, value: /app/backend/data/home}
                 - {name: ENABLE_OLLAMA_API, value: "False"}
