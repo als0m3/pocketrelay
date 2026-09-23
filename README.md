@@ -126,19 +126,35 @@ On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v
 - **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
 - **LiteLLM** runs alongside Open WebUI as another `/v1` client, with its own revocable `sk-cr` key and the same usage limits. It serves `opus` / `sonnet` / `haiku` / `fable` with virtual keys and team budgets, and can connect external providers such as OpenAI, Gemini or Mistral.
 
+| Public hostname | Service | Internal route |
+|---|---|---|
+| `relay.example.test` | LiteLLM API; UI blocked from the public network | `relay-llm.apps.cluster.example.test` |
+| `relay-chat.example.test` | Open WebUI | `relay.apps.cluster.example.test` |
+| `relay-api.example.test` | console `/admin` + `/v1` | `relay-api.apps.cluster.example.test` |
+
+Internal names remain unchanged because changing an OKD route hostname requires recreation. Map public names in `deploy/vps/relay.conf`.
+
 ```bash
 GHCR_TOKEN=<PAT-write:packages> ./deploy/build-push.sh           # build amd64 and push privately
 cp deploy/okd/params.env.example deploy/okd/params.env           # hosts, issuer, client, administrators
 OIDC_CLIENT_SECRET=… GHCR_PULL_TOKEN=<PAT read:packages> ./deploy/okd/deploy.sh
 ```
 
+Then configure the VPS reverse proxy after pointing all three DNS names to it;
+the certificate is expanded when required:
+
+```bash
+./deploy/vps/install.sh root@203.0.113.10
+```
+
 Create a confidential OIDC client with the standard flow and these redirect URIs:
-`https://<CHAT_HOST>/oauth/oidc/callback` and `https://<API_HOST>/admin/auth/callback`.
+`https://<PUBLIC_CHAT_HOST>/oauth/oidc/callback` and `https://<PUBLIC_API_HOST>/admin/auth/callback`.
 
 ### LiteLLM
 
-No public route: LiteLLM is reachable only inside the namespace (`http://litellm:4000`).
-Its UI uses password authentication without SSO. Administer it through port forwarding:
+`https://relay.example.test` serves the LiteLLM API, protected by virtual keys.
+Its UI uses username/password authentication without SSO; `/ui`, `/sso` and `/login` return
+404 on the public network (`deploy/vps/relay.conf`). Administer it through port forwarding:
 
 ```bash
 oc -n custom-remote port-forward svc/litellm 4000:4000     # → http://localhost:4000/ui

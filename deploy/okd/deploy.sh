@@ -50,7 +50,7 @@ oc process --local -f template.yaml --param-file params.env --ignore-unknown-par
 
 # Routes: NetBird label and/or Let’s Encrypt certificate from params.env.
 source params.env
-for r in claude-api open-webui; do
+for r in claude-api open-webui litellm; do
   [ "${NETBIRD_ROUTE:-false}" = "true" ] && oc_ label route "$r" netbird-route=true --overwrite >/dev/null
   if [ -n "${CERT_ISSUER:-}" ]; then
     oc_ annotate route "$r" --overwrite cert-manager.io/issuer-kind=ClusterIssuer \

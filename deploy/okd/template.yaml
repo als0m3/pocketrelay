@@ -3,7 +3,7 @@ kind: Template
 metadata:
   name: custom-remote
   annotations:
-    description: OpenAI-compatible subscription gateway via CLI, token console, Open WebUI OIDC SSO and LiteLLM
+    description: OpenAI-compatible subscription gateway via CLI, token console, Open WebUI OIDC SSO and LiteLLM gateway
 parameters:
   - name: IMAGE
     required: true
@@ -20,6 +20,12 @@ parameters:
     required: true
   - name: PUBLIC_CHAT_HOST
     description: Public Open WebUI hostname behind the VPS reverse proxy
+    required: true
+  - name: LITELLM_HOST
+    description: Internal LiteLLM route hostname
+    required: true
+  - name: PUBLIC_LITELLM_HOST
+    description: Public LiteLLM hostname behind the VPS proxy; UI blocked by relay.conf
     required: true
   - name: OIDC_ISSUER
     description: "Issuer OIDC, ex. https://keycloak.example/auth/realms/xxx"
@@ -313,6 +319,7 @@ objects:
                 - name: DATABASE_URL
                   valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-database-url}}
                 - {name: STORE_MODEL_IN_DB, value: "True"}   # Persist models added through the UI.
+                - {name: PROXY_BASE_URL, value: "https://${PUBLIC_LITELLM_HOST}"}
                 # Arbitrary UID under restricted SCC: write Prisma data and caches to /tmp.
                 - {name: HOME, value: /tmp}
                 - {name: PRISMA_BINARY_CACHE_DIR, value: /tmp/prisma}
@@ -333,8 +340,17 @@ objects:
     spec:
       selector: {app: litellm}
       ports: [{name: http, port: 4000, targetPort: http}]
-  # No route: LiteLLM serves only the internal namespace network.
-  # Access its UI for virtual keys, budgets and providers through port forwarding.
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: litellm
+      labels: {app: litellm}
+      annotations: {haproxy.router.openshift.io/timeout: 600s}
+    spec:
+      host: ${LITELLM_HOST}
+      to: {kind: Service, name: litellm}
+      port: {targetPort: http}
+      tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
 
   # ---------- network: only the router, Open WebUI and LiteLLM can reach pods ----------
   - apiVersion: networking.k8s.io/v1
@@ -365,7 +381,8 @@ objects:
       policyTypes: [Ingress]
       ingress:
         - from: [{podSelector: {matchLabels: {app: open-webui}}}]
-        # oc port-forward connections originate from the node.
+        - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/ingress: ""}}}]
+        # Host-network router and oc port-forward connections originate from the node.
         - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/host-network: ""}}}]
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
