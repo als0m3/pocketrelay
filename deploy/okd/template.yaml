@@ -319,7 +319,10 @@ objects:
                 - name: DATABASE_URL
                   valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-database-url}}
                 - {name: STORE_MODEL_IN_DB, value: "True"}   # Persist models added through the UI.
-                - {name: PROXY_BASE_URL, value: "https://${PUBLIC_LITELLM_HOST}"}
+                # No PROXY_BASE_URL while the UI is internal-only through NetBird or
+                # port forwarding, so redirects must follow the requested host.
+                # The router terminates TLS: trust its X-Forwarded-Proto header.
+                - {name: FORWARDED_ALLOW_IPS, value: "*"}
                 # Arbitrary UID under restricted SCC: write Prisma data and caches to /tmp.
                 - {name: HOME, value: /tmp}
                 - {name: PRISMA_BINARY_CACHE_DIR, value: /tmp/prisma}
