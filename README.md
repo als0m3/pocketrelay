@@ -166,16 +166,21 @@ LiteLLM SSO is free for **up to five database users**. A sixth account requires
 an enterprise license to sign in. This is an administration console,
 while chat has no corresponding account-count limit.
 
-The password form returns 404 on the public network. If Keycloak is unavailable,
-use internal recovery; the master key remains a valid API key:
+The username/password form is disabled: `disable_password_login_when_sso_enabled`
+makes `/login` return 403 and sends `/ui` directly to Keycloak (`AUTO_REDIRECT_UI_LOGIN_TO_SSO`).
+`relay.conf` additionally returns 404 for public /login requests.
+
+If Keycloak is unavailable, console access also fails. The master key remains
+a valid **API key** for managing keys, budgets and models:
 
 ```bash
-oc -n custom-remote set env deploy/litellm PROXY_BASE_URL-      # Follow the requested host in redirects.
-oc -n custom-remote port-forward svc/litellm 4000:4000          # → http://localhost:4000/ui
-oc -n custom-remote get secret custom-remote -o jsonpath='{.data.litellm-master-key}' | base64 -d
-# username: admin · password: the master key above
-# Restore with ./deploy/okd/deploy.sh or oc set env … PROXY_BASE_URL=https://relay.example.test
+KEY=$(oc -n custom-remote get secret custom-remote -o jsonpath='{.data.litellm-master-key}' | base64 -d)
+curl -s https://relay.example.test/v1/models -H "Authorization: Bearer $KEY"
 ```
+
+To reopen the console during a prolonged SSO outage, remove `disable_password_login_when_sso_enabled`
+from the `litellm-config` ConfigMap and restart `deploy/litellm`. This is an explicit
+configuration change visible in the repository.
 
 Gateway models are declared in the `litellm-config` ConfigMap
 (`deploy/okd/template.yaml`). External providers can be added through the UI and

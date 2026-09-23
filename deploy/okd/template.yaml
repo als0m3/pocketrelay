@@ -255,6 +255,10 @@ objects:
           num_retries: 0           # The gateway already handles account failover.
         general_settings:
           forward_client_headers_to_llm_api: true   # laisse passer x-openwebui-user-jwt
+          # SSO-only console login: reject the username/password form
+          # whenever SSO is fully configured. The master key remains valid
+          # for Bearer API access, never for /login.
+          disable_password_login_when_sso_enabled: true
   - apiVersion: v1
     kind: PersistentVolumeClaim
     metadata: {name: litellm-db-data, labels: {app: litellm-db}}
@@ -336,6 +340,7 @@ objects:
                 # Keycloak requires PKCE S256, as with Open WebUI. Without Redis,
                 # keep code_verifier in pod memory using a single Recreate replica.
                 - {name: GENERIC_CLIENT_USE_PKCE, value: "true"}
+                - {name: AUTO_REDIRECT_UI_LOGIN_TO_SSO, value: "true"}   # Send /ui directly to Keycloak.
                 - {name: GENERIC_INCLUDE_TOKEN_CLAIMS, value: "true"}   # Roles may appear only in tokens.
                 - {name: GENERIC_ROLE_MAPPINGS_GROUP_CLAIM, value: "${ROLES_CLAIM}"}
                 - {name: GENERIC_ROLE_MAPPINGS_ROLES, value: '{"proxy_admin": ["${ADMIN_ROLE}"], "internal_user": ["${ACCESS_ROLE}"]}'}
