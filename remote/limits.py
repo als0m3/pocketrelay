@@ -1,8 +1,9 @@
 """Usage controls for /v1: per-user rates and concurrency limits.
 
 Open WebUI sends user identity in an HS256 JWT signed with a shared
-secret; trust it only on the dedicated Open WebUI API key.
-Other clients are limited per API key.
+secret; trust it only for API keys belonging to
+gateways forwarding identity (Open WebUI, LiteLLM). Other clients are
+limited per API key.
 """
 
 import asyncio
@@ -13,7 +14,8 @@ from collections import defaultdict, deque
 USER_RATE = os.environ.get("REMOTE_USER_RATE", "200/h")        # Set 0 to disable.
 MAX_CONCURRENCY = int(os.environ.get("REMOTE_MAX_CONCURRENCY", "6"))
 QUEUE_TIMEOUT = float(os.environ.get("REMOTE_QUEUE_TIMEOUT", "120"))
-FORWARDER_KEY = os.environ.get("REMOTE_FORWARDER_KEY_NAME", "open-webui")
+# Keys that forward end-user identity, as comma-separated names.
+FORWARDER_KEYS = {n.strip() for n in os.environ.get("REMOTE_FORWARDER_KEY_NAME", "open-webui").split(",") if n.strip()}
 JWT_SECRET = os.environ.get("REMOTE_FORWARD_JWT_SECRET", "")
 JWT_HEADER = "x-openwebui-user-jwt"
 
@@ -58,11 +60,11 @@ def admit(headers, ident: dict):
     if not _RATE or ident.get("master"):
         return
     subject = f"key:{ident.get('key_id')}"
-    if ident.get("key_name") == FORWARDER_KEY:
+    if ident.get("key_name") in FORWARDER_KEYS:
         user = forwarded_user(headers)
         if user and user.get("role") == "admin":
             return
-        # Without valid identity, all requests under the Open WebUI key share one allowance.
+        # Without valid identity, requests on the gateway key share one allowance.
         subject = f"owui:{user['email'] or user['id']}" if user else subject
     n, secs, label = _RATE
     now = time.time()

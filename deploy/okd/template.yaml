@@ -3,7 +3,7 @@ kind: Template
 metadata:
   name: custom-remote
   annotations:
-    description: OpenAI-compatible subscription gateway via CLI, token console and Open WebUI with OIDC SSO
+    description: OpenAI-compatible subscription gateway via CLI, token console, Open WebUI OIDC SSO and LiteLLM
 parameters:
   - name: IMAGE
     required: true
@@ -54,6 +54,11 @@ parameters:
   - name: TASK_MODEL
     description: Model for Open WebUI background tasks (titles, tags, suggestions)
     value: haiku
+  - name: LITELLM_IMAGE
+    value: ghcr.io/berriai/litellm:main-stable
+  - name: POSTGRES_IMAGE
+    description: "LiteLLM PostgreSQL image (sclorg, compatible with arbitrary OpenShift UIDs)"
+    value: quay.io/sclorg/postgresql-16-c9s:latest
 objects:
   # ---------- passerelle ----------
   - apiVersion: v1
@@ -96,7 +101,7 @@ objects:
                 - {name: REMOTE_V1_ALLOW_MASTER, value: "0"}
                 - {name: REMOTE_USER_RATE, value: "${USER_RATE}"}
                 - {name: REMOTE_MAX_CONCURRENCY, value: "${MAX_CONCURRENCY}"}
-                - {name: REMOTE_FORWARDER_KEY_NAME, value: open-webui}
+                - {name: REMOTE_FORWARDER_KEY_NAME, value: "open-webui,litellm"}
                 - name: REMOTE_FORWARD_JWT_SECRET
                   valueFrom: {secretKeyRef: {name: custom-remote, key: forward-jwt-secret}}
               volumeMounts: [{name: data, mountPath: /data}]
@@ -207,7 +212,131 @@ objects:
       port: {targetPort: http}
       tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
 
-  # ---------- network: only the router and Open WebUI can reach pods ----------
+  # ---------- LiteLLM ----------
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata: {name: litellm-config, labels: {app: litellm}}
+    data:
+      config.yaml: |
+        # Gateway models use a dedicated revocable sk-cr key.
+        # LiteLLM is another /v1 client, subject to the same limits as Open WebUI.
+        # Add external providers (OpenAI, Gemini, Mistral…) through the UI;
+        # database persistence avoids redeployment.
+        model_list:
+          - model_name: opus
+            litellm_params:
+              model: openai/opus
+              api_base: os.environ/CLAUDE_API_BASE
+              api_key: os.environ/CLAUDE_API_KEY
+          - model_name: sonnet
+            litellm_params:
+              model: openai/sonnet
+              api_base: os.environ/CLAUDE_API_BASE
+              api_key: os.environ/CLAUDE_API_KEY
+          - model_name: haiku
+            litellm_params:
+              model: openai/haiku
+              api_base: os.environ/CLAUDE_API_BASE
+              api_key: os.environ/CLAUDE_API_KEY
+          - model_name: fable
+            litellm_params:
+              model: openai/fable
+              api_base: os.environ/CLAUDE_API_BASE
+              api_key: os.environ/CLAUDE_API_KEY
+        litellm_settings:
+          drop_params: true        # the gateway ignores temperature / top_p / max_tokens
+          request_timeout: 600
+          num_retries: 0           # The gateway already handles account failover.
+        general_settings:
+          forward_client_headers_to_llm_api: true   # laisse passer x-openwebui-user-jwt
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata: {name: litellm-db-data, labels: {app: litellm-db}}
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources: {requests: {storage: 2Gi}}
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata: {name: litellm-db, labels: {app: litellm-db, app.kubernetes.io/part-of: custom-remote}}
+    spec:
+      replicas: 1
+      strategy: {type: Recreate}
+      selector: {matchLabels: {app: litellm-db}}
+      template:
+        metadata: {labels: {app: litellm-db}}
+        spec:
+          containers:
+            - name: postgres
+              image: ${POSTGRES_IMAGE}
+              ports: [{containerPort: 5432, name: postgres}]
+              env:
+                - {name: POSTGRESQL_USER, value: litellm}
+                - {name: POSTGRESQL_DATABASE, value: litellm}
+                - name: POSTGRESQL_PASSWORD
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-db-password}}
+              volumeMounts: [{name: data, mountPath: /var/lib/pgsql/data}]
+              readinessProbe: {exec: {command: [/usr/libexec/check-container]}, initialDelaySeconds: 10, periodSeconds: 10, failureThreshold: 30}
+              livenessProbe: {tcpSocket: {port: postgres}, initialDelaySeconds: 120, periodSeconds: 30, failureThreshold: 5}
+              resources:
+                requests: {cpu: 25m, memory: 128Mi}
+                limits: {memory: 512Mi}
+          volumes: [{name: data, persistentVolumeClaim: {claimName: litellm-db-data}}]
+  - apiVersion: v1
+    kind: Service
+    metadata: {name: litellm-db, labels: {app: litellm-db}}
+    spec:
+      selector: {app: litellm-db}
+      ports: [{name: postgres, port: 5432, targetPort: postgres}]
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata: {name: litellm, labels: {app: litellm, app.kubernetes.io/part-of: custom-remote}}
+    spec:
+      replicas: 1
+      strategy: {type: Recreate}
+      selector: {matchLabels: {app: litellm}}
+      template:
+        metadata: {labels: {app: litellm}}
+        spec:
+          containers:
+            - name: litellm
+              image: ${LITELLM_IMAGE}
+              args: ["--config", "/app/config/config.yaml", "--port", "4000"]
+              ports: [{containerPort: 4000, name: http}]
+              env:
+                - {name: CLAUDE_API_BASE, value: "http://claude-api:8787/v1"}
+                - name: CLAUDE_API_KEY            # Dedicated sk-cr key, like Open WebUI
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-api-key}}
+                - name: LITELLM_MASTER_KEY        # Master key and UI password for admin
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-master-key}}
+                - name: LITELLM_SALT_KEY          # Encrypts stored provider keys; never change it.
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-salt-key}}
+                - name: DATABASE_URL
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-database-url}}
+                - {name: STORE_MODEL_IN_DB, value: "True"}   # Persist models added through the UI.
+                # Arbitrary UID under restricted SCC: write Prisma data and caches to /tmp.
+                - {name: HOME, value: /tmp}
+                - {name: PRISMA_BINARY_CACHE_DIR, value: /tmp/prisma}
+              volumeMounts:
+                - {name: config, mountPath: /app/config}
+                - {name: tmp, mountPath: /tmp}
+              readinessProbe: {httpGet: {path: /health/readiness, port: http}, initialDelaySeconds: 20, periodSeconds: 10, failureThreshold: 60}
+              livenessProbe: {httpGet: {path: /health/liveliness, port: http}, initialDelaySeconds: 180, periodSeconds: 30, failureThreshold: 5}
+              resources:
+                requests: {cpu: 50m, memory: 512Mi}
+                limits: {memory: 1536Mi}
+          volumes:
+            - {name: config, configMap: {name: litellm-config}}
+            - {name: tmp, emptyDir: {}}
+  - apiVersion: v1
+    kind: Service
+    metadata: {name: litellm, labels: {app: litellm}}
+    spec:
+      selector: {app: litellm}
+      ports: [{name: http, port: 4000, targetPort: http}]
+  # No route: LiteLLM serves only the internal namespace network.
+  # Access its UI for virtual keys, budgets and providers through port forwarding.
+
+  # ---------- network: only the router, Open WebUI and LiteLLM can reach pods ----------
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
     metadata: {name: claude-api-ingress}
@@ -216,6 +345,7 @@ objects:
       policyTypes: [Ingress]
       ingress:
         - from: [{podSelector: {matchLabels: {app: open-webui}}}]
+        - from: [{podSelector: {matchLabels: {app: litellm}}}]
         - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/ingress: ""}}}]
         - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/host-network: ""}}}]
   - apiVersion: networking.k8s.io/v1
@@ -227,3 +357,21 @@ objects:
       ingress:
         - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/ingress: ""}}}]
         - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/host-network: ""}}}]
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata: {name: litellm-ingress}
+    spec:
+      podSelector: {matchLabels: {app: litellm}}
+      policyTypes: [Ingress]
+      ingress:
+        - from: [{podSelector: {matchLabels: {app: open-webui}}}]
+        # oc port-forward connections originate from the node.
+        - from: [{namespaceSelector: {matchLabels: {policy-group.network.openshift.io/host-network: ""}}}]
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata: {name: litellm-db-ingress}
+    spec:
+      podSelector: {matchLabels: {app: litellm-db}}
+      policyTypes: [Ingress]
+      ingress:
+        - from: [{podSelector: {matchLabels: {app: litellm}}}]

@@ -114,7 +114,7 @@ docker run -d --name open-webui-customremote -p 3000:8080 \
 
 The server can execute code on your machine through Claude. It binds to `127.0.0.1`, requires a token and rejects unknown `Host` headers to prevent DNS rebinding. For phone access, prefer Tailscale (`REMOTE_HOST=<tailscale-ip>` and `REMOTE_ALLOWED_HOSTS`) over public exposure.
 
-## OKD deployment (gateway + Open WebUI + SSO)
+## OKD deployment (gateway + Open WebUI + LiteLLM + SSO)
 
 On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v1` and the **`/admin` console**; Claude Code sessions are disabled with `REMOTE_ENABLE_SESSIONS=0`.
 
@@ -124,6 +124,7 @@ On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v
   - per-account quota meters, testing, activation, renaming, token replacement/reconnection and deletion; system accounts use host login;
   - `sk-cr-…` API keys stored as hashes, displayed once, with Python / curl / Open WebUI examples.
 - **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
+- **LiteLLM** runs alongside Open WebUI as another `/v1` client, with its own revocable `sk-cr` key and the same usage limits. It serves `opus` / `sonnet` / `haiku` / `fable` with virtual keys and team budgets, and can connect external providers such as OpenAI, Gemini or Mistral.
 
 ```bash
 GHCR_TOKEN=<PAT-write:packages> ./deploy/build-push.sh           # build amd64 and push privately
@@ -133,3 +134,24 @@ OIDC_CLIENT_SECRET=… GHCR_PULL_TOKEN=<PAT read:packages> ./deploy/okd/deploy.s
 
 Create a confidential OIDC client with the standard flow and these redirect URIs:
 `https://<CHAT_HOST>/oauth/oidc/callback` and `https://<API_HOST>/admin/auth/callback`.
+
+### LiteLLM
+
+No public route: LiteLLM is reachable only inside the namespace (`http://litellm:4000`).
+Its UI uses password authentication without SSO. Administer it through port forwarding:
+
+```bash
+oc -n custom-remote port-forward svc/litellm 4000:4000     # → http://localhost:4000/ui
+oc -n custom-remote get secret custom-remote -o jsonpath='{.data.litellm-master-key}' | base64 -d
+# username: admin · password: the master key above, also valid as an API key
+```
+
+Gateway models are declared in the `litellm-config` ConfigMap
+(`deploy/okd/template.yaml`). External providers can be added through the UI and
+persisted with `STORE_MODEL_IN_DB`, without redeployment. State lives in PostgreSQL
+(`litellm-db`, 2 Gi PVC); `litellm-salt-key` encrypts provider keys in the database
+and must never change.
+
+To offer external models in chat, add an OpenAI connection in Open WebUI using
+semicolon-separated `OPENAI_API_BASE_URLS` / `OPENAI_API_KEYS`, pointing to `http://litellm:4000/v1`.
+Disable duplicate gateway models in LiteLLM so they do not appear twice.
