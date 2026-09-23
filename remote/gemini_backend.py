@@ -36,17 +36,13 @@ DEFAULT_MODEL = os.environ.get("REMOTE_GEMINI_MODEL") or next(iter(MODELS), "gem
 FAST_MODEL = os.environ.get("REMOTE_GEMINI_FAST_MODEL") or next(
     (m for m in MODELS if "flash" in m), DEFAULT_MODEL)
 
-# The model should only answer: remove every built-in tool.
-DISABLED_TOOLS = ["run_shell_command", "glob", "grep_search", "search_file_content", "list_directory",
-                  "read_file", "read_many_files", "replace", "write_file", "ask_user", "write_todos",
-                  "google_web_search", "web_fetch", "save_memory", "activate_skill", "get_internal_docs",
-                  "enter_plan_mode", "exit_plan_mode", "list_mcp_resources", "read_mcp_resource"]
-
 SETTINGS = {
     "security": {"auth": {"selectedType": "oauth-personal"}},   # Google subscription, never API-key billing.
     "privacy": {"usageStatisticsEnabled": False},
     "general": {"checkForUpdates": False},
-    "tools": {"core": [], "exclude": DISABLED_TOOLS},
+    # An empty core allowlist registers no built-in tools; exclude would be
+    # redundant and is deprecated. The model should only answer.
+    "tools": {"core": []},
     "mcpServers": {},
 }
 
@@ -177,9 +173,12 @@ async def run_gemini(system: str, blocks: list[dict], model: str, acc: dict):
                 done = True
                 break
         if not done:
-            err = (await proc.stderr.read()).decode(errors="replace")[-1500:].strip()
-            msg = err or "; ".join(warnings) or "Gemini CLI exited without a result."
-            raise GeminiError(msg, _kind(msg))
+            # The error is on the first stderr line, before the stack trace.
+            err = (await proc.stderr.read()).decode(errors="replace").strip()
+            head = next((l.strip() for l in err.splitlines() if l.strip()), "")
+            code = await proc.wait()
+            msg = head or "; ".join(warnings) or f"Gemini CLI exited without a result (code {code})."
+            raise GeminiError(msg[:500], _kind(err or msg))
         yield "done", info
     finally:
         if proc.returncode is None:
