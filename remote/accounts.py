@@ -286,5 +286,6 @@ def public(acc: dict) -> dict:
         tok = token(acc) or ""
         out["masked"] = tok[:14] + "…" + tok[-4:] if tok else None
     if acc["provider"] == "gemini":
-        out["connected"] = gemini_connected(acc) or acc["system"]
+        # System accounts also require oauth_creds.json to be connected.
+        out["connected"] = gemini_connected(acc)
     return out

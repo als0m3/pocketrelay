@@ -655,7 +655,10 @@ async def list_models(request: Request):
         except Exception:
             pass  # Continue serving Claude when Codex is unavailable or signed out.
     data = []
-    gemini_models = gemini_backend.MODELS if gemini_backend.ENABLED else {}
+    # As with Codex, advertise models only when an account can serve them.
+    gemini_ready = gemini_backend.ENABLED and any(
+        a["enabled"] and accounts.gemini_connected(a) for a in accounts.listing("gemini"))
+    gemini_models = gemini_backend.MODELS if gemini_ready else {}
     if LIST_AUTO:
         data += [entry(m, f"Auto · {CLAUDE_NAMES[m]}", "anthropic") for m in CLAUDE_NAMES]
         data += [entry(m["id"], f"Auto · {m.get('displayName') or m['id']}", "openai") for m in codex_models]
@@ -669,7 +672,7 @@ async def list_models(request: Request):
                 data += [entry(f"{acc['id']}/{m['id']}", f"{acc['label']} · {m.get('displayName') or m['id']}", "openai")
                          for m in codex_models]
         for acc in accounts.listing("gemini") if gemini_models else []:
-            if acc["enabled"] and (acc["system"] or accounts.gemini_connected(acc)):
+            if acc["enabled"] and accounts.gemini_connected(acc):
                 data += [entry(f"{acc['id']}/{m}", f"{acc['label']} · {n}", "google") for m, n in gemini_models.items()]
     # Full model IDs remain accepted even when omitted from the catalog.
     return {"object": "list", "data": data}
