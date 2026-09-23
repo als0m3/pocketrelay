@@ -1,11 +1,11 @@
-"""Subscription accounts (Claude and Codex), ordered by priority within each provider.
+"""Subscription accounts (Claude, Codex and Gemini), ordered by provider priority.
 
 Requests select the first active, available account. Account-related
 failures before any output (quota exhaustion or lost authentication)
 pause that account and retry with the next one.
 
 Each provider system account uses authentication from
-default host credentials (`claude login`, `~/.codex` or $CODEX_HOME).
+default host credentials (`claude login`, `~/.codex` or $CODEX_HOME, `~/.gemini`).
 """
 
 import json
@@ -21,7 +21,7 @@ from .config import DATA
 FILE = DATA / "accounts.json"
 STATE_FILE = DATA / "accounts_state.json"
 DIR = DATA / "accounts"
-PROVIDERS = ("claude", "codex")
+PROVIDERS = ("claude", "codex", "gemini")
 RATE_LIMIT_PAUSE = 15 * 60      # Fallback when no quota reset time is provided.
 AUTH_PAUSE = 10 * 60            # Avoid retrying signed-out accounts on every request.
 
@@ -44,6 +44,12 @@ def _load():
     if FILE.exists():
         _accounts = json.loads(FILE.read_text())
         _state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+        # Add the Gemini system account to existing installations.
+        missing = [p for p in PROVIDERS if not any(a["system"] and a["provider"] == p for a in _accounts)]
+        if missing:
+            _accounts += [{"id": f"system-{p}", "provider": p, "label": "Host login",
+                           "enabled": True, "system": True, "created": time.time()} for p in missing]
+            _save()
         return
     now = time.time()
     _accounts = [{"id": f"system-{p}", "provider": p, "label": "Host login", "enabled": True,
@@ -106,6 +112,23 @@ def codex_home(acc: dict) -> str | None:
     return str(DIR / acc["id"] / "codex")
 
 
+def gemini_home(acc: dict) -> str | None:
+    """Account GEMINI_CLI_HOME; the CLI creates a .gemini subdirectory."""
+    if acc["system"]:
+        return os.environ.get("GEMINI_CLI_HOME") or None
+    return str(DIR / acc["id"] / "gemini")
+
+
+def gemini_creds_path(acc: dict) -> Path | None:
+    home = gemini_home(acc)
+    return Path(home) / ".gemini" / "oauth_creds.json" if home else None
+
+
+def gemini_connected(acc: dict) -> bool:
+    p = gemini_creds_path(acc)
+    return bool(p and p.exists())
+
+
 def available(acc: dict) -> bool:
     return acc["enabled"] and state(acc["id"]).get("paused_until", 0) <= time.time()
 
@@ -141,6 +164,34 @@ def add_codex(label: str) -> dict:
         Path(codex_home(acc)).mkdir(parents=True, exist_ok=True)
         _save()
     return acc
+
+
+def add_gemini(label: str) -> dict:
+    with _lock:
+        acc = _new("gemini", label)
+        Path(gemini_home(acc), ".gemini").mkdir(parents=True, exist_ok=True)
+        _save()
+    return acc
+
+
+def set_gemini_creds(acc_id: str, creds: str):
+    """Write account oauth_creds.json produced after CLI Google login."""
+    with _lock:
+        acc = get(acc_id)
+        path = gemini_creds_path(acc)
+        if path is None:
+            raise ValueError("The system account uses host credentials.")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(creds)
+        path.chmod(0o600)
+        resume(acc_id)
+
+
+def clear_gemini_creds(acc_id: str):
+    with _lock:
+        path = gemini_creds_path(get(acc_id))
+        if path and path.exists():
+            path.unlink()
 
 
 def set_token(acc_id: str, tok: str):
@@ -234,4 +285,6 @@ def public(acc: dict) -> dict:
     if acc["provider"] == "claude" and not acc["system"]:
         tok = token(acc) or ""
         out["masked"] = tok[:14] + "…" + tok[-4:] if tok else None
+    if acc["provider"] == "gemini":
+        out["connected"] = gemini_connected(acc) or acc["system"]
     return out

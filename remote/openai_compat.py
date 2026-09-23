@@ -23,7 +23,7 @@ from contextlib import aclosing
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import accounts, codex_backend, keys, limits
+from . import accounts, codex_backend, gemini_backend, keys, limits
 from .config import CLAUDE_BIN, DATA, TOKEN
 from .sessions import child_env
 
@@ -94,7 +94,7 @@ def new_id(prefix: str) -> str:
 
 def _strip(model: str | None) -> str:
     m = (model or "").strip()
-    for prefix in ("anthropic/", "claude-code/", "claude/", "openai/"):
+    for prefix in ("anthropic/", "claude-code/", "claude/", "openai/", "google/", "gemini/"):
         if m.startswith(prefix):
             m = m[len(prefix):]
     return m
@@ -102,6 +102,16 @@ def _strip(model: str | None) -> str:
 
 def is_claude(model: str) -> bool:
     return model.startswith("claude") or model.split("[")[0] in ALIASES
+
+
+def is_gemini(model: str) -> bool:
+    # Route by model name alone so a missing Gemini CLI fails explicitly.
+    # Never silently switch to a different provider.
+    return model.startswith(("gemini", "gemma")) or model in gemini_backend.MODELS
+
+
+def provider_of(model: str) -> str:
+    return "claude" if is_claude(model) else "gemini" if is_gemini(model) else "codex"
 
 
 def split_account(model: str) -> tuple[dict | None, str]:
@@ -120,7 +130,7 @@ async def resolve_model(model: str | None) -> str:
     acc, m = split_account(_strip(model))
     real = await _resolve_plain(m)
     if acc:
-        if acc["provider"] != ("claude" if is_claude(real) else "codex"):
+        if acc["provider"] != provider_of(real):
             raise OAIError(400, f"Model {m} does not belong to account {acc['label']}.", param="model")
         return f"{acc['id']}/{real}"
     return real
@@ -129,6 +139,8 @@ async def resolve_model(model: str | None) -> str:
 async def _resolve_plain(m: str) -> str:
     """Use Claude for aliases/claude-*; Codex for its IDs and OpenAI-style names."""
     if m and is_claude(m):
+        return m
+    if m and is_gemini(m):
         return m
     if codex_backend.ENABLED:
         try:
@@ -159,7 +171,10 @@ async def run_llm(system: str, blocks: list[dict], model: str, effort: str | Non
     names, such as <id>/sonnet, use only that account.
     """
     pinned, model = split_account(model)
-    provider = "claude" if is_claude(model) else "codex"
+    provider = provider_of(model)
+    if provider == "gemini" and not gemini_backend.ENABLED:
+        raise OAIError(503, f"Model {model} requires Gemini CLI, which is not installed.", "api_error",
+                       code="provider_unavailable")
     if pinned and not pinned["enabled"]:
         raise OAIError(503, f"Account {pinned['label']} is disabled in the console.", "api_error",
                        code="account_disabled")
@@ -182,6 +197,8 @@ async def run_llm(system: str, blocks: list[dict], model: str, effort: str | Non
                 if provider == "claude":
                     gen = run_claude(system, blocks, model, EFFORT_MAP.get(effort or ""), accounts.token(acc),
                                      lambda lim, a=acc: accounts.record_limits(a, lim))
+                elif provider == "gemini":
+                    gen = _gemini(system, blocks, model, acc)
                 else:
                     gen = _codex(system, blocks, model, effort, schema, acc)
                 async with aclosing(gen) as inner:
@@ -199,6 +216,20 @@ async def run_llm(system: str, blocks: list[dict], model: str, effort: str | Non
             last_error = e
             if not accounts.record_failure(acc, _failure_kind(e), e.message, getattr(e, "resets_at", None)) or started:
                 raise
+
+
+async def _gemini(system, blocks, model, acc):
+    try:
+        async with aclosing(gemini_backend.run_gemini(system, blocks, model, acc)) as inner:
+            async for ev in inner:
+                if ev[0] == "done":
+                    STATS["requests"] += 1
+                    STATS["output_tokens"] += ev[1]["usage"].get("output_tokens") or 0
+                yield ev
+    except gemini_backend.GeminiError as e:
+        STATS["errors"] += 1
+        status = {"rate_limit_error": 429, "authentication_error": 503, "invalid_request_error": 400}.get(e.kind, 502)
+        raise OAIError(status, e.message, e.kind)
 
 
 async def _codex(system, blocks, model, effort, schema, acc):
@@ -624,9 +655,11 @@ async def list_models(request: Request):
         except Exception:
             pass  # Continue serving Claude when Codex is unavailable or signed out.
     data = []
+    gemini_models = gemini_backend.MODELS if gemini_backend.ENABLED else {}
     if LIST_AUTO:
         data += [entry(m, f"Auto · {CLAUDE_NAMES[m]}", "anthropic") for m in CLAUDE_NAMES]
         data += [entry(m["id"], f"Auto · {m.get('displayName') or m['id']}", "openai") for m in codex_models]
+        data += [entry(m, f"Auto · {n}", "google") for m, n in gemini_models.items()]
     if LIST_PER_ACCOUNT:
         for acc in accounts.listing("claude"):
             if acc["enabled"]:
@@ -635,6 +668,9 @@ async def list_models(request: Request):
             if acc["enabled"]:
                 data += [entry(f"{acc['id']}/{m['id']}", f"{acc['label']} · {m.get('displayName') or m['id']}", "openai")
                          for m in codex_models]
+        for acc in accounts.listing("gemini") if gemini_models else []:
+            if acc["enabled"] and (acc["system"] or accounts.gemini_connected(acc)):
+                data += [entry(f"{acc['id']}/{m}", f"{acc['label']} · {n}", "google") for m, n in gemini_models.items()]
     # Full model IDs remain accepted even when omitted from the catalog.
     return {"object": "list", "data": data}
 

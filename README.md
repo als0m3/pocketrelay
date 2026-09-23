@@ -71,16 +71,17 @@ client.chat.completions.create(model="sonnet", messages=[{"role": "user", "conte
 | `POST /v1/completions` | legacy API (prompt, stop, echo, stream) |
 | embeddings, audio, images, files… | 404 with an OpenAI-style error |
 
-Two providers selected by model name:
+Three providers selected by model name:
 
 | Models | Backend | Subscription |
 |---|---|---|
 | `opus`, `sonnet`, `haiku`, `fable`, `claude-*` | ephemeral `claude -p` | Claude (`claude login` / `claude setup-token`) |
 | `gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`… (catalog from Codex) | persistent `codex app-server`, ephemeral thread per request | ChatGPT (`codex login`) |
+| `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro/flash`, `gemini-*`, `gemma-*` | ephemeral `gemini --output-format stream-json` | Google AI Pro / Ultra (CLI Google login) |
 
 **Open WebUI names**: `/v1/models` prefixes display names with console accounts. “Mac · Sonnet” (`<account-id>/sonnet`) uses that account only; “Auto · Sonnet” (`sonnet`) selects the first available account with failover. IDs remain stable on rename. Disable entries with `REMOTE_MODELS_AUTO=0` or `REMOTE_MODELS_PER_ACCOUNT=0`.
 
-Unknown OpenAI-style names (`gpt-4o`, `o3`, `codex`…) use the default Codex model (`REMOTE_CODEX_MODEL` or its advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex replaces system instructions with `baseInstructions`, disables model tools and uses a read-only sandbox. Strict `json_schema` response formats are enforced through `outputSchema`.
+`gemini-*` and `gemma-*` names use Gemini CLI and fail explicitly if it is missing. Unknown OpenAI-style names use the default Codex model (`REMOTE_CODEX_MODEL` or the advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex uses `baseInstructions`, disabled tools and a read-only sandbox, with native strict `json_schema` enforcement through `outputSchema`.
 
 **Codex PDF inputs** are converted with `pypdfium2`: extract text per page and render scanned/image pages as PNG (≤ 2048 pixels, `detail: high`). Configure `REMOTE_PDF_MODE` (`auto`, `images` for all pages, or `text`), `REMOTE_PDF_MAX_IMAGE_PAGES` (20) and `REMOTE_PDF_MAX_TEXT_CHARS` (400,000). Prefer `gpt-5.6-sol` or above for scans because `luna` makes OCR errors. Claude reads PDFs natively.
 
@@ -89,6 +90,8 @@ Each request launches an ephemeral `claude -p` process **without Claude Code too
 - function calls are prompt-emulated: the model emits `<tool_call>` blocks converted into `tool_calls`, without native API guarantees;
 - `temperature`, `top_p`, `max_tokens`, `seed` and `logprobs` are ignored;
 - the CLI adds a short Claude Agent SDK preamble to the system prompt.
+
+**Gemini** launches an ephemeral CLI per request without tools (`tools.core: []` and exclusions), uses `GEMINI_SYSTEM_MD` for client system instructions and isolates accounts with `GEMINI_CLI_HOME`. API-key variables are removed to use the subscription. Images are unsupported; PDFs become text with scanned pages omitted. Response formats and tool calls are prompt-emulated. Settings: `REMOTE_ENABLE_GEMINI=0` to disable, `REMOTE_GEMINI_MODELS`, `REMOTE_GEMINI_MODEL`, `REMOTE_GEMINI_FAST_MODEL` for account tests, and `GEMINI_BIN`.
 
 `REMOTE_OAI_DEBUG=1` logs unrecognized tool output.
 
@@ -114,12 +117,31 @@ docker run -d --name open-webui-customremote -p 3000:8080 \
 
 The server can execute code on your machine through Claude. It binds to `127.0.0.1`, requires a token and rejects unknown `Host` headers to prevent DNS rebinding. For phone access, prefer Tailscale (`REMOTE_HOST=<tailscale-ip>` and `REMOTE_ALLOWED_HOSTS`) over public exposure.
 
+### Gemini accounts
+
+Gemini CLI does not offer remotely controlled device-code login: Google OAuth requires
+a browser that can reach the CLI host. Import credentials manually,
+as with Claude tokens; the CLI then renews them using its refresh_token:
+
+```bash
+gemini                          # On a browser-equipped host, choose Sign in with Google.
+cat ~/.gemini/oauth_creds.json   # Paste this into /admin.
+```
+
+Alternatively, sign in directly inside the pod, whose credential directory is on the volume:
+
+```bash
+oc -n custom-remote exec -it deploy/claude-api -- \
+  env GEMINI_CLI_HOME=/data/accounts/<account-id>/gemini NO_BROWSER=1 gemini
+# Open the displayed URL and enter the code shown after Google authorization.
+```
+
 ## OKD deployment (gateway + Open WebUI + LiteLLM + SSO)
 
 On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v1` and the **`/admin` console**; Claude Code sessions are disabled with `REMOTE_ENABLE_SESSIONS=0`.
 
 - **`/admin` console** (OIDC SSO, administrators allowlisted by email or Keycloak group/role; master-token recovery):
-  - **Multiple accounts per provider**, ordered by priority: Claude (paste and test a `claude setup-token` token) and ChatGPT/Codex (device-code login, isolated `CODEX_HOME` and app-server per account);
+  - **Multiple accounts per provider**, ordered by priority: Claude setup tokens tested on addition, Codex device-code login with isolated `CODEX_HOME`/app-server, and Gemini credential import with isolated `GEMINI_CLI_HOME`;
   - **Automatic failover**: quota/authentication failure before the first output pauses the account (until quota reset or 15 minutes, or 10 minutes for authentication) and retries the next account;
   - per-account quota meters, testing, activation, renaming, token replacement/reconnection and deletion; system accounts use host login;
   - `sk-cr-…` API keys stored as hashes, displayed once, with Python / curl / Open WebUI examples.

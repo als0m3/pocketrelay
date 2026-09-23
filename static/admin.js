@@ -97,11 +97,14 @@ function render() {
   renderAccounts("claude");
   $("#codex-col").hidden = !s.codex_enabled;
   if (s.codex_enabled) renderAccounts("codex");
+  $("#gemini-col").hidden = !s.gemini_enabled;
+  if (s.gemini_enabled) renderAccounts("gemini");
   renderKeys();
 }
 
 function renderKpis() {
-  const all = [...S.accounts.claude, ...(S.codex_enabled ? S.accounts.codex : [])];
+  const all = [...S.accounts.claude, ...(S.codex_enabled ? S.accounts.codex : []),
+               ...(S.gemini_enabled ? S.accounts.gemini : [])];
   const ready = all.filter(a => a.status === "ok" || a.status === "unknown").length;
   const activeKeys = S.keys.filter(k => !k.revoked).length;
   const kpi = (ic, lbl, val, sub) => h("div", { class: "kpi" },
@@ -145,6 +148,10 @@ function meters(a) {
 }
 
 function identity(a) {
+  if (a.provider === "gemini") {
+    if (a.connected) return a.system ? "Server Gemini session" : "Google credentials configured";
+    return a.system ? "Server Gemini session: not signed in" : "Not signed in";
+  }
   if (a.provider === "codex") {
     const id = a.identity;
     if (id) return `${id.email || "ChatGPT account"}${id.planType ? " · plan " + id.planType : ""}`;
@@ -169,7 +176,8 @@ function renderAccounts(provider) {
     const notes = [];
     if (a.status === "paused") notes.push(h("div", { class: "acc-note warn" }, `Paused (${a.pause_reason || "quota"}): requests use the next account.`));
     else if (a.last_error && a.enabled) notes.push(h("div", { class: "acc-note bad" }, a.last_error.message));
-    const needsLogin = a.provider === "codex" && !a.identity && a.enabled;
+    const needsLogin = a.enabled && ((a.provider === "codex" && !a.identity)
+      || (a.provider === "gemini" && !a.system && !a.connected));
     return h("div", { class: `acc ${a.enabled ? "" : "disabled"}` },
       h("div", { class: "acc-top" },
         h("span", { class: "prio", title: "Priority" }, i + 1),
@@ -182,7 +190,7 @@ function renderAccounts(provider) {
       notes,
       h("div", { class: "acc-foot" },
         h("span", { class: "stat" }, `${a.requests || 0} request${(a.requests || 0) !== 1 ? "s" : ""} · ${ago(a.last_used)}`),
-        needsLogin ? h("button", { class: "btn sm primary", onclick: () => codexLogin(a) }, icon("link"), "Connect") : null,
+        needsLogin ? h("button", { class: "btn sm primary", onclick: () => (a.provider === "gemini" ? geminiCreds(a) : codexLogin(a)) }, icon("link"), "Connect") : null,
         h("button", { class: "btn sm", onclick: e => testAccount(a, e.currentTarget) }, icon("play"), "Test"),
         h("button", { class: "btn ghost icon", title: "Move up", disabled: i === 0, onclick: () => act(() => call(`/admin/api/accounts/${a.id}/move`, "POST", { delta: -1 })) }, icon("up")),
         h("button", { class: "btn ghost icon", title: "Move down", disabled: i === list.length - 1, onclick: () => act(() => call(`/admin/api/accounts/${a.id}/move`, "POST", { delta: 1 })) }, icon("down")),
@@ -219,7 +227,11 @@ function accountMenu(a, anchor) {
       r.test?.ok ? toast("Token replaced and tested ✓") : toast(`Token saved, but the test failed: ${r.test?.error}`, true);
     }, true)));
   if (a.provider === "codex") items.push(item("link", a.identity ? "Switch ChatGPT account" : "Connect", () => codexLogin(a)));
+  if (a.provider === "gemini" && !a.system) items.push(item("key", a.connected ? "Replace credentials" : "Connect", () => geminiCreds(a)));
   if (a.status === "paused") items.push(item("refresh", "Resume now", () => act(() => call(`/admin/api/accounts/${a.id}/resume`, "POST"), "Account resumed")));
+  if (a.provider === "gemini" && a.connected && !a.system) items.push(item("logout", "Disconnect", () => {
+    if (confirm(`Remove Google credentials for ${a.label} from this server?`)) act(() => call(`/admin/api/accounts/${a.id}/logout`, "POST"), "Disconnected");
+  }));
   if (a.provider === "codex" && a.identity) items.push(item("logout", "Disconnect", () => {
     if (confirm(`Disconnect ${a.identity.email || a.label} from this server?`)) act(() => call(`/admin/api/accounts/${a.id}/logout`, "POST"), "Disconnected");
   }));
@@ -269,7 +281,10 @@ $("#dlg-add").addEventListener("close", () => { clearInterval(loginPoll); refres
 function segmented() {
   const seg = (p, label, color) => h("button", { type: "button", class: addProvider === p ? "on" : "", onclick: () => { addProvider = p; renderAddForm(); } },
     h("span", { class: "dotc", style: `background:var(--${color})` }), label);
-  return S.codex_enabled ? h("div", { class: "segmented" }, seg("claude", "Claude", "claude"), seg("codex", "ChatGPT · Codex", "codex")) : null;
+  const tabs = [seg("claude", "Claude", "claude")];
+  if (S.codex_enabled) tabs.push(seg("codex", "ChatGPT · Codex", "codex"));
+  if (S.gemini_enabled) tabs.push(seg("gemini", "Google · Gemini", "gemini"));
+  return tabs.length > 1 ? h("div", { class: "segmented" }, tabs) : null;
 }
 
 function renderAddForm() {
@@ -299,6 +314,30 @@ function renderAddForm() {
       out);
     $("#add-foot").replaceChildren(cancel, submit);
     setTimeout(() => tok.focus(), 50);
+  } else if (addProvider === "gemini") {
+    const creds = h("textarea", { class: "input mono", rows: 6, placeholder: '{"access_token":"…","refresh_token":"…"}', spellcheck: false });
+    const out = h("div");
+    const submit = h("button", { class: "btn primary", onclick: async () => {
+      if (!creds.value.trim()) return creds.focus();
+      submit.disabled = true; submit.textContent = "Adding and testing…";
+      try {
+        const r = await call("/admin/api/accounts", "POST", { provider: "gemini", label: name.value, credentials: creds.value.trim() });
+        if (r.test.ok) { success(`${r.account.label} is ready`, `Test response in ${r.test.seconds} s.`); }
+        else { out.replaceChildren(h("div", { class: "result bad" }, `Account added, but the test failed: ${r.test.error}`)); submit.textContent = "Close"; submit.disabled = false; submit.onclick = () => $("#dlg-add").close(); }
+      } catch (e) { out.replaceChildren(h("div", { class: "result bad" }, e.message)); submit.disabled = false; submit.textContent = "Add"; }
+    } }, "Add");
+    $("#add-body").replaceChildren(segmented(),
+      h("ol", { class: "steps" },
+        h("li", {}, "On a machine with a browser, sign the CLI into the Google AI Pro / Ultra account:",
+          h("div", { class: "cmd" }, h("code", {}, "gemini  → Sign in with Google"), h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy("gemini") }, icon("copy")))),
+        h("li", {}, "Copy the credential file it created:",
+          h("div", { class: "cmd" }, h("code", {}, "cat ~/.gemini/oauth_creds.json"), h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy("cat ~/.gemini/oauth_creds.json") }, icon("copy")))),
+        h("li", {}, "Paste it here; the server uses and refreshes it automatically.")),
+      h("label", { class: "field" }, h("span", {}, "oauth_creds.json"), creds),
+      h("label", { class: "field" }, h("span", {}, "Account name"), name),
+      out);
+    $("#add-foot").replaceChildren(cancel, submit);
+    setTimeout(() => creds.focus(), 50);
   } else {
     const submit = h("button", { class: "btn primary", onclick: async () => {
       submit.disabled = true; submit.textContent = "Preparing…";
@@ -343,6 +382,15 @@ function deviceStep(account, login) {
     }
   }, 3000);
 }
+
+async function geminiCreds(a) {
+  prompt2("Google credentials", "Paste ~/.gemini/oauth_creds.json, created by Gemini CLI after login.", "",
+    async v => {
+      const r = await call(`/admin/api/accounts/${a.id}/token`, "PUT", { credentials: v });
+      r.test?.ok ? toast("Credentials saved and tested ✓") : toast(`Credentials saved, but the test failed: ${r.test?.error}`, true);
+    }, true);
+}
+
 
 async function codexLogin(a) {
   addProvider = "codex";

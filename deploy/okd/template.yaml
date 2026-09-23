@@ -3,7 +3,7 @@ kind: Template
 metadata:
   name: custom-remote
   annotations:
-    description: OpenAI-compatible subscription gateway via CLI, token console, Open WebUI OIDC SSO and LiteLLM gateway
+    description: OpenAI-compatible CLI subscription gateway, token console, Open WebUI OIDC SSO and LiteLLM (Claude, Codex, Gemini)
 parameters:
   - name: IMAGE
     required: true
@@ -107,6 +107,8 @@ objects:
                 - {name: REMOTE_V1_ALLOW_MASTER, value: "0"}
                 - {name: REMOTE_USER_RATE, value: "${USER_RATE}"}
                 - {name: REMOTE_MAX_CONCURRENCY, value: "${MAX_CONCURRENCY}"}
+                # Persist system Gemini CLI state on the volume.
+                - {name: GEMINI_CLI_HOME, value: /data/gemini}
                 - {name: REMOTE_FORWARDER_KEY_NAME, value: "open-webui,litellm"}
                 - name: REMOTE_FORWARD_JWT_SECRET
                   valueFrom: {secretKeyRef: {name: custom-remote, key: forward-jwt-secret}}

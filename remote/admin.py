@@ -1,4 +1,4 @@
-"""Admin console (/admin): Claude/Codex subscription accounts, API keys and quotas.
+"""Admin console (/admin): Claude/Codex/Gemini subscription accounts, API keys and quotas.
 
 Use OIDC (Keycloak, etc.) when REMOTE_OIDC_ISSUER is configured, otherwise
 use the master token for login or recovery. Sessions use signed cookies;
@@ -6,13 +6,14 @@ all mutations require the X-Admin header to prevent CSRF.
 """
 
 import asyncio
+import json
 import secrets
 import time
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
-from . import accounts, codex_backend, keys, openai_compat
+from . import accounts, codex_backend, gemini_backend, keys, openai_compat
 from .config import (ADMIN_EMAILS, ADMIN_GROUPS, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, PUBLIC_HOST, PUBLIC_URL,
                      STATIC, TOKEN)
 
@@ -141,6 +142,7 @@ async def state(request: Request):
         "keys": keys.list_keys(),
         "stats": openai_compat.STATS,
         "codex_enabled": codex_backend.ENABLED,
+        "gemini_enabled": gemini_backend.ENABLED,
         "accounts": {p: [accounts.public(a) for a in accounts.listing(p)] for p in accounts.PROVIDERS},
     }
 
@@ -164,6 +166,16 @@ def _account(acc_id: str) -> dict:
         raise HTTPException(404, "Unknown account")
 
 
+def _check_gemini_creds(raw: str):
+    """Contents of ~/.gemini/oauth_creds.json written after Sign in with Google."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "Invalid JSON: paste the contents of ~/.gemini/oauth_creds.json.")
+    if not isinstance(data, dict) or not data.get("refresh_token"):
+        raise HTTPException(400, "JSON is missing refresh_token: expected a Gemini oauth_creds.json file.")
+
+
 def _check_claude_token(tok: str):
     if not tok.startswith("sk-ant-"):
         raise HTTPException(400, "Invalid claude setup-token token: expected the sk-ant- prefix.")
@@ -184,6 +196,14 @@ async def add_account(request: Request):
             raise HTTPException(400, "Codex is not installed on this server.")
         acc = accounts.add_codex(label or "ChatGPT account")
         return {"account": accounts.public(acc), "login": await _device_login(acc)}
+    if provider == "gemini":
+        if not gemini_backend.ENABLED:
+            raise HTTPException(400, "Gemini CLI is not installed on this server.")
+        creds = str(body.get("credentials", "")).strip()
+        _check_gemini_creds(creds)
+        acc = accounts.add_gemini(label or "Google account")
+        accounts.set_gemini_creds(acc["id"], creds)
+        return {"account": accounts.public(acc), "test": await _test(acc)}
     raise HTTPException(400, "Unknown provider")
 
 
@@ -208,11 +228,19 @@ async def relogin(acc_id: str, request: Request):
 async def replace_token(acc_id: str, request: Request):
     require_admin(request, mutating=True)
     acc = _account(acc_id)
-    if acc["provider"] != "claude" or acc["system"]:
-        raise HTTPException(400, "Only added Claude accounts have a token")
-    tok = str((await request.json()).get("token", "")).strip()
-    _check_claude_token(tok)
-    accounts.set_token(acc_id, tok)
+    if acc["system"]:
+        raise HTTPException(400, "The system account uses host credentials")
+    body = await request.json()
+    if acc["provider"] == "gemini":
+        creds = str(body.get("credentials", "")).strip()
+        _check_gemini_creds(creds)
+        accounts.set_gemini_creds(acc_id, creds)
+    elif acc["provider"] == "claude":
+        tok = str(body.get("token", "")).strip()
+        _check_claude_token(tok)
+        accounts.set_token(acc_id, tok)
+    else:
+        raise HTTPException(400, "This account uses device-code login rather than a token")
     return {"account": accounts.public(acc), "test": await _test(acc)}
 
 
@@ -249,6 +277,8 @@ async def logout_account(acc_id: str, request: Request):
     if acc["provider"] == "codex":
         await codex_backend.logout(codex_backend.server_for(acc))
         accounts.state(acc_id).pop("identity", None)
+    elif acc["provider"] == "gemini":
+        accounts.clear_gemini_creds(acc_id)
     return {"ok": True}
 
 
@@ -279,6 +309,9 @@ async def _test(acc: dict) -> dict:
             model = "haiku"
             gen = openai_compat.run_claude("Reply with exactly: pong", [{"type": "text", "text": "ping"}], model, "low",
                                            accounts.token(acc), lambda lim: accounts.record_limits(acc, lim))
+        elif acc["provider"] == "gemini":
+            model = gemini_backend.FAST_MODEL
+            gen = openai_compat._gemini("Reply with exactly: pong", [{"type": "text", "text": "ping"}], model, acc)
         else:
             models = await codex_backend.list_models()
             model = next((m["id"] for m in models if "luna" in m["id"]), None) or await codex_backend.default_model()
