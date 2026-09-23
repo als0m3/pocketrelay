@@ -319,10 +319,24 @@ objects:
                 - name: DATABASE_URL
                   valueFrom: {secretKeyRef: {name: custom-remote, key: litellm-database-url}}
                 - {name: STORE_MODEL_IN_DB, value: "True"}   # Persist models added through the UI.
-                # No PROXY_BASE_URL while the UI is internal-only through NetBird or
-                # port forwarding, so redirects must follow the requested host.
+                # Use the public UI URL to build the SSO redirect_uri
+                # at <base>/sso/callback and post-login redirects.
+                - {name: PROXY_BASE_URL, value: "https://${PUBLIC_LITELLM_HOST}"}
                 # The router terminates TLS: trust its X-Forwarded-Proto header.
                 - {name: FORWARDED_ALLOW_IPS, value: "*"}
+                # OIDC SSO shares the console/Open WebUI Keycloak client. Free for up to
+                # five database users; additional users require a LiteLLM enterprise license.
+                - {name: GENERIC_CLIENT_ID, value: "${OIDC_CLIENT_ID}"}
+                - name: GENERIC_CLIENT_SECRET
+                  valueFrom: {secretKeyRef: {name: custom-remote, key: oidc-client-secret}}
+                - {name: GENERIC_AUTHORIZATION_ENDPOINT, value: "${OIDC_ISSUER}/protocol/openid-connect/auth"}
+                - {name: GENERIC_TOKEN_ENDPOINT, value: "${OIDC_ISSUER}/protocol/openid-connect/token"}
+                - {name: GENERIC_USERINFO_ENDPOINT, value: "${OIDC_ISSUER}/protocol/openid-connect/userinfo"}
+                - {name: GENERIC_SCOPE, value: "openid email profile"}
+                - {name: GENERIC_INCLUDE_TOKEN_CLAIMS, value: "true"}   # Roles may appear only in tokens.
+                - {name: GENERIC_ROLE_MAPPINGS_GROUP_CLAIM, value: "${ROLES_CLAIM}"}
+                - {name: GENERIC_ROLE_MAPPINGS_ROLES, value: '{"proxy_admin": ["${ADMIN_ROLE}"], "internal_user": ["${ACCESS_ROLE}"]}'}
+                - {name: GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE, value: internal_user_viewer}   # Read-only without a role.
                 # Arbitrary UID under restricted SCC: write Prisma data and caches to /tmp.
                 - {name: HOME, value: /tmp}
                 - {name: PRISMA_BINARY_CACHE_DIR, value: /tmp/prisma}

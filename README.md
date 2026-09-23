@@ -128,7 +128,7 @@ On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v
 
 | Public hostname | Service | Internal route |
 |---|---|---|
-| `relay.example.test` | LiteLLM API; UI blocked from the public network | `relay-llm.apps.cluster.example.test` |
+| `relay.example.test` | LiteLLM (API + SSO console) | `relay-llm.apps.cluster.example.test` |
 | `relay-chat.example.test` | Open WebUI | `relay.apps.cluster.example.test` |
 | `relay-api.example.test` | console `/admin` + `/v1` | `relay-api.apps.cluster.example.test` |
 
@@ -148,18 +148,29 @@ the certificate is expanded when required:
 ```
 
 Create a confidential OIDC client with the standard flow and these redirect URIs:
-`https://<PUBLIC_CHAT_HOST>/oauth/oidc/callback` and `https://<PUBLIC_API_HOST>/admin/auth/callback`.
+`https://<PUBLIC_CHAT_HOST>/oauth/oidc/callback`, `https://<PUBLIC_API_HOST>/admin/auth/callback`
+and `https://<PUBLIC_LITELLM_HOST>/sso/callback`.
 
 ### LiteLLM
 
-`https://relay.example.test` serves the LiteLLM API, protected by virtual keys.
-Its UI uses username/password authentication without SSO; `/ui`, `/sso` and `/login` return
-404 on the public network (`deploy/vps/relay.conf`). Administer it through port forwarding:
+`https://relay.example.test` serves the LiteLLM API with virtual keys and its console
+on `/ui`, **sign in through Keycloak SSO**, using the same client as `/admin` and Open WebUI.
+`ADMIN_ROLE` → `proxy_admin`, `ACCESS_ROLE` → `internal_user`; no matching role grants read-only access.
+Register this redirect URI: `https://<PUBLIC_LITELLM_HOST>/sso/callback`.
+
+LiteLLM SSO is free for **up to five database users**. A sixth account requires
+an enterprise license to sign in. This is an administration console,
+while chat has no corresponding account-count limit.
+
+The password form returns 404 on the public network. If Keycloak is unavailable,
+use internal recovery; the master key remains a valid API key:
 
 ```bash
-oc -n custom-remote port-forward svc/litellm 4000:4000     # → http://localhost:4000/ui
+oc -n custom-remote set env deploy/litellm PROXY_BASE_URL-      # Follow the requested host in redirects.
+oc -n custom-remote port-forward svc/litellm 4000:4000          # → http://localhost:4000/ui
 oc -n custom-remote get secret custom-remote -o jsonpath='{.data.litellm-master-key}' | base64 -d
-# username: admin · password: the master key above, also valid as an API key
+# username: admin · password: the master key above
+# Restore with ./deploy/okd/deploy.sh or oc set env … PROXY_BASE_URL=https://relay.example.test
 ```
 
 Gateway models are declared in the `litellm-config` ConfigMap
