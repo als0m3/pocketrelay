@@ -158,6 +158,10 @@ on `/ui`, **sign in through Keycloak SSO**, using the same client as `/admin` an
 `ADMIN_ROLE` → `proxy_admin`, `ACCESS_ROLE` → `internal_user`; no matching role grants read-only access.
 Register this redirect URI: `https://<PUBLIC_LITELLM_HOST>/sso/callback`.
 
+The Keycloak client requires PKCE: `GENERIC_CLIENT_USE_PKCE=true`. Without Redis,
+LiteLLM keeps `code_verifier` in pod memory; use one replica with `Recreate`.
+A restart during login invalidates that attempt; simply start again.
+
 LiteLLM SSO is free for **up to five database users**. A sixth account requires
 an enterprise license to sign in. This is an administration console,
 while chat has no corresponding account-count limit.
