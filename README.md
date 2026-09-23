@@ -182,9 +182,12 @@ To reopen the console during a prolonged SSO outage, remove `disable_password_lo
 from the `litellm-config` ConfigMap and restart `deploy/litellm`. This is an explicit
 configuration change visible in the repository.
 
-Gateway models are declared in the `litellm-config` ConfigMap
-(`deploy/okd/template.yaml`). External providers can be added through the UI and
-persisted with `STORE_MODEL_IN_DB`, without redeployment. State lives in PostgreSQL
+The `litellm-config` ConfigMap declares no models. Add them through the UI
+(*Models* tab), with database persistence (`STORE_MODEL_IN_DB`) and no redeployment.
+For gateway models, reference pod environment variables instead of pasting the key:
+*Provider* `OpenAI-Compatible`, *Model* `openai/<sonnet|opus|haiku|fable|gpt-…>`,
+*API Base* `os.environ/CLAUDE_API_BASE`, *API Key* `os.environ/CLAUDE_API_KEY`. LiteLLM encrypts
+the stored value and resolves the reference at request time, keeping `sk-cr` out of configuration. State lives in PostgreSQL
 (`litellm-db`, 2 Gi PVC); `litellm-salt-key` encrypts provider keys in the database
 and must never change.
 

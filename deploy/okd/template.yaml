@@ -224,31 +224,14 @@ objects:
     metadata: {name: litellm-config, labels: {app: litellm}}
     data:
       config.yaml: |
-        # Gateway models use a dedicated revocable sk-cr key.
-        # LiteLLM is another /v1 client, subject to the same limits as Open WebUI.
-        # Add external providers (OpenAI, Gemini, Mistral…) through the UI;
-        # database persistence avoids redeployment.
-        model_list:
-          - model_name: opus
-            litellm_params:
-              model: openai/opus
-              api_base: os.environ/CLAUDE_API_BASE
-              api_key: os.environ/CLAUDE_API_KEY
-          - model_name: sonnet
-            litellm_params:
-              model: openai/sonnet
-              api_base: os.environ/CLAUDE_API_BASE
-              api_key: os.environ/CLAUDE_API_KEY
-          - model_name: haiku
-            litellm_params:
-              model: openai/haiku
-              api_base: os.environ/CLAUDE_API_BASE
-              api_key: os.environ/CLAUDE_API_KEY
-          - model_name: fable
-            litellm_params:
-              model: openai/fable
-              api_base: os.environ/CLAUDE_API_BASE
-              api_key: os.environ/CLAUDE_API_KEY
+        # Add models through the UI Models tab, with database persistence
+        # through STORE_MODEL_IN_DB. For gateway models, use pod environment
+        # references instead of pasting the key:
+        #   Provider  : OpenAI-Compatible
+        #   Model: openai/<sonnet|opus|haiku|fable|gpt-…> (name returned by /v1/models)
+        #   API Base  : os.environ/CLAUDE_API_BASE               (http://claude-api:8787/v1)
+        #   API Key: os.environ/CLAUDE_API_KEY (dedicated revocable sk-cr key)
+        model_list: []
         litellm_settings:
           drop_params: true        # the gateway ignores temperature / top_p / max_tokens
           request_timeout: 600
