@@ -143,7 +143,7 @@ On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v
 - **`/admin` console** (OIDC SSO, administrators allowlisted by email or Keycloak group/role; master-token recovery):
   - **Multiple accounts per provider**, ordered by priority: Claude setup tokens tested on addition, Codex device-code login with isolated `CODEX_HOME`/app-server, and Gemini credential import with isolated `GEMINI_CLI_HOME`;
   - **Automatic failover**: quota/authentication failure before the first output pauses the account (until quota reset or 15 minutes, or 10 minutes for authentication) and retries the next account;
-  - per-account quota meters, testing, activation, renaming, token replacement/reconnection and deletion; system accounts use host login;
+  - per-account quotas, testing, activation, renaming, token replacement/reconnection and deletion. System accounts use host login; `REMOTE_SYSTEM_ACCOUNTS` (`SYSTEM_ACCOUNTS`) selects maintained providers, empty for none, defaulting to `gemini` on the cluster. Excluded system accounts are not recreated and can be deleted;
   - `sk-cr-…` API keys stored as hashes, displayed once, with Python / curl / Open WebUI examples.
 - **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
 - **LiteLLM** runs alongside Open WebUI as another `/v1` client, with its own revocable `sk-cr` key and the same usage limits. It serves `opus` / `sonnet` / `haiku` / `fable` with virtual keys and team budgets, and can connect external providers such as OpenAI, Gemini or Mistral.

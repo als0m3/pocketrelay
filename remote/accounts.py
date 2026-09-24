@@ -22,6 +22,11 @@ FILE = DATA / "accounts.json"
 STATE_FILE = DATA / "accounts_state.json"
 DIR = DATA / "accounts"
 PROVIDERS = ("claude", "codex", "gemini")
+# Maintained host-login providers: empty for none on a cluster without host
+# credentials; an absent variable retains all three for development machines.
+_env = os.environ.get("REMOTE_SYSTEM_ACCOUNTS")
+SYSTEM_ACCOUNTS = tuple(PROVIDERS) if _env is None else tuple(
+    p for p in PROVIDERS if p in {x.strip() for x in _env.split(",")})
 RATE_LIMIT_PAUSE = 15 * 60      # Fallback when no quota reset time is provided.
 AUTH_PAUSE = 10 * 60            # Avoid retrying signed-out accounts on every request.
 
@@ -45,7 +50,7 @@ def _load():
         _accounts = json.loads(FILE.read_text())
         _state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
         # Add the Gemini system account to existing installations.
-        missing = [p for p in PROVIDERS if not any(a["system"] and a["provider"] == p for a in _accounts)]
+        missing = [p for p in SYSTEM_ACCOUNTS if not any(a["system"] and a["provider"] == p for a in _accounts)]
         if missing:
             _accounts += [{"id": f"system-{p}", "provider": p, "label": "Host login",
                            "enabled": True, "system": True, "created": time.time()} for p in missing]
@@ -53,7 +58,7 @@ def _load():
         return
     now = time.time()
     _accounts = [{"id": f"system-{p}", "provider": p, "label": "Host login", "enabled": True,
-                  "system": True, "created": now} for p in PROVIDERS]
+                  "system": True, "created": now} for p in SYSTEM_ACCOUNTS]
     # Migrate the former single token into a full account with highest priority.
     legacy = DATA / "claude_oauth_token"
     if legacy.exists():
@@ -227,8 +232,9 @@ def move(acc_id: str, delta: int):
 def remove(acc_id: str):
     with _lock:
         acc = get(acc_id)
-        if acc["system"]:
-            raise ValueError("The system account cannot be deleted; disable it instead.")
+        if acc["system"] and acc["provider"] in SYSTEM_ACCOUNTS:
+            raise ValueError(f"System account {acc['provider']} is recreated at startup: "
+                             "remove its provider from REMOTE_SYSTEM_ACCOUNTS or disable the account.")
         _accounts.remove(acc)
         _state.pop(acc_id, None)
         shutil.rmtree(DIR / acc_id, ignore_errors=True)

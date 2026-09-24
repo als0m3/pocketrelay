@@ -122,6 +122,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 80px; }
 .pill.paused { background: var(--warn-soft); color: var(--warn); }
 .pill.error { background: var(--bad-soft); color: var(--bad); }
 .pill.disabled, .pill.unknown { background: var(--sunken); color: var(--text-3); }
+.pill.sys { background: var(--sunken); color: var(--text-3); }
+.pill.sys::before { display: none; }
 .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 12px 0 0 32px; }
 .meter .row { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-3); }
 .meter .row b { color: var(--text-2); font-weight: 650; font-variant-numeric: tabular-nums; }

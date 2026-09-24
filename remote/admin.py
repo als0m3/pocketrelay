@@ -143,6 +143,8 @@ async def state(request: Request):
         "stats": openai_compat.STATS,
         "codex_enabled": codex_backend.ENABLED,
         "gemini_enabled": gemini_backend.ENABLED,
+        # Providers without maintained system accounts become deletable.
+        "deletable_system": [p for p in accounts.PROVIDERS if p not in accounts.SYSTEM_ACCOUNTS],
         "accounts": {p: [accounts.public(a) for a in accounts.listing(p)] for p in accounts.PROVIDERS},
     }
 

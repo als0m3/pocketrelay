@@ -182,6 +182,7 @@ function renderAccounts(provider) {
       h("div", { class: "acc-top" },
         h("span", { class: "prio", title: "Priority" }, i + 1),
         h("span", { class: "acc-name" }, a.label),
+        a.system ? h("span", { class: "pill sys", title: "Server-created account: uses the host machine's login" }, "system") : null,
         pill,
         h("span", { class: "spacer" }),
         toggle),
@@ -235,7 +236,7 @@ function accountMenu(a, anchor) {
   if (a.provider === "codex" && a.identity) items.push(item("logout", "Disconnect", () => {
     if (confirm(`Disconnect ${a.identity.email || a.label} from this server?`)) act(() => call(`/admin/api/accounts/${a.id}/logout`, "POST"), "Disconnected");
   }));
-  if (!a.system) {
+  if (!a.system || S.deletable_system?.includes(a.provider)) {
     items.push(h("hr"));
     items.push(item("trash", "Delete", () => {
       if (confirm(`Delete account ${a.label} and its credentials?`)) act(() => call(`/admin/api/accounts/${a.id}`, "DELETE"), "Account deleted");

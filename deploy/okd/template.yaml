@@ -60,6 +60,9 @@ parameters:
   - name: TASK_MODEL
     description: Model for Open WebUI background tasks (titles, tags, suggestions)
     value: haiku
+  - name: SYSTEM_ACCOUNTS
+    description: "Providers retaining host-login accounts, comma-separated; empty for none. Only Gemini uses this on the cluster through oc exec."
+    value: gemini
   - name: LITELLM_IMAGE
     value: ghcr.io/berriai/litellm:main-stable
   - name: POSTGRES_IMAGE
@@ -109,6 +112,7 @@ objects:
                 - {name: REMOTE_MAX_CONCURRENCY, value: "${MAX_CONCURRENCY}"}
                 # Persist system Gemini CLI state on the volume.
                 - {name: GEMINI_CLI_HOME, value: /data/gemini}
+                - {name: REMOTE_SYSTEM_ACCOUNTS, value: "${SYSTEM_ACCOUNTS}"}
                 - {name: REMOTE_FORWARDER_KEY_NAME, value: "open-webui,litellm"}
                 - name: REMOTE_FORWARD_JWT_SECRET
                   valueFrom: {secretKeyRef: {name: custom-remote, key: forward-jwt-secret}}
