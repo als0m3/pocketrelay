@@ -132,7 +132,7 @@ async def resolve_model(model: str | None) -> str:
     if acc:
         if acc["provider"] != provider_of(real):
             raise OAIError(400, f"Model {m} does not belong to account {acc['label']}.", param="model")
-        return f"{acc['id']}/{real}"
+        return f"{acc['slug']}/{real}"
     return real
 
 
@@ -665,14 +665,14 @@ async def list_models(request: Request):
     if LIST_PER_ACCOUNT:
         for acc in accounts.listing("claude"):
             if acc["enabled"]:
-                data += [entry(f"{acc['id']}/{m}", f"{acc['label']} · {n}", "anthropic") for m, n in CLAUDE_NAMES.items()]
+                data += [entry(f"{acc['slug']}/{m}", f"{acc['label']} · {n}", "anthropic") for m, n in CLAUDE_NAMES.items()]
         for acc in accounts.listing("codex") if codex_models else []:
             if acc["enabled"]:
-                data += [entry(f"{acc['id']}/{m['id']}", f"{acc['label']} · {m.get('displayName') or m['id']}", "openai")
+                data += [entry(f"{acc['slug']}/{m['id']}", f"{acc['label']} · {m.get('displayName') or m['id']}", "openai")
                          for m in codex_models]
         for acc in accounts.listing("antigravity") if agy_models else []:
             if acc["enabled"]:
-                data += [entry(f"{acc['id']}/{m}", f"{acc['label']} · {n}", "google") for m, n in agy_models.items()]
+                data += [entry(f"{acc['slug']}/{m}", f"{acc['label']} · {n}", "google") for m, n in agy_models.items()]
     # Full model IDs remain accepted even when omitted from the catalog.
     return {"object": "list", "data": data}
 

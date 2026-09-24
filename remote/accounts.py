@@ -10,6 +10,8 @@ default host credentials (`claude login`, `~/.codex` or $CODEX_HOME, Antigravity
 
 import json
 import os
+import re
+import unicodedata
 import secrets
 import shutil
 import threading
@@ -29,6 +31,11 @@ SYSTEM_ACCOUNTS = tuple(PROVIDERS) if _env is None else tuple(
     p for p in PROVIDERS if p in {x.strip() for x in _env.split(",")})
 RATE_LIMIT_PAUSE = 15 * 60      # Fallback when no quota reset time is provided.
 AUTH_PAUSE = 10 * 60            # Avoid retrying signed-out accounts on every request.
+
+# The OpenAI layer strips provider prefixes from model names. Colliding account
+# slugs would disappear before routing and silently fall back to Auto.
+RESERVED = {"anthropic", "claude", "claude-code", "openai", "google", "antigravity", "gemini",
+            "codex", "system", "auto"}
 
 _lock = threading.RLock()
 _accounts: list[dict] = []
@@ -55,15 +62,19 @@ def _load():
         for a in orphans:
             _accounts.remove(a)
             _state.pop(a["id"], None)
+        without_slug = [a for a in _accounts if not a.get("slug")]
+        for a in without_slug:
+            a["slug"] = f"system-{a['provider']}" if a["system"] else _unique_slug(_slugify(a["label"]), a["id"])
         missing = [p for p in SYSTEM_ACCOUNTS if not any(a["system"] and a["provider"] == p for a in _accounts)]
-        if missing or orphans:
-            _accounts += [{"id": f"system-{p}", "provider": p, "label": "Host login",
-                           "enabled": True, "system": True, "created": time.time()} for p in missing]
+        if missing or orphans or without_slug:
+            _accounts += [{"id": f"system-{p}", "slug": f"system-{p}", "provider": p,
+                           "label": "Host login", "enabled": True, "system": True,
+                           "created": time.time()} for p in missing]
             _save()
         return
     now = time.time()
-    _accounts = [{"id": f"system-{p}", "provider": p, "label": "Host login", "enabled": True,
-                  "system": True, "created": now} for p in SYSTEM_ACCOUNTS]
+    _accounts = [{"id": f"system-{p}", "slug": f"system-{p}", "provider": p, "label": "Host login",
+                  "enabled": True, "system": True, "created": now} for p in SYSTEM_ACCOUNTS]
     # Migrate the former single token into a full account with highest priority.
     legacy = DATA / "claude_oauth_token"
     if legacy.exists():
@@ -75,9 +86,26 @@ def _load():
     _save()
 
 
+def _slugify(text: str) -> str:
+    """Claude account → claude-account: readable and suitable for model IDs."""
+    ascii_ = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"-{2,}", "-", re.sub(r"[^a-z0-9]+", "-", ascii_.lower())).strip("-")[:24].strip("-")
+
+
+def _unique_slug(base: str, skip: str | None = None) -> str:
+    base = base or "account"
+    taken = {a.get("slug") for a in _accounts if a["id"] != skip}
+    slug, n = base, 1
+    while slug in taken or slug in RESERVED:
+        n += 1
+        slug = f"{base}-{n}"
+    return slug
+
+
 def _new(provider: str, label: str) -> dict:
-    acc = {"id": secrets.token_hex(5), "provider": provider, "label": label.strip() or provider,
-           "enabled": True, "system": False, "created": time.time()}
+    label = label.strip() or provider
+    acc = {"id": secrets.token_hex(5), "slug": _unique_slug(_slugify(label)), "provider": provider,
+           "label": label, "enabled": True, "system": False, "created": time.time()}
     _accounts.append(acc)
     return acc
 
@@ -96,8 +124,9 @@ with _lock:
 # ---------- lecture ----------
 
 def get(acc_id: str) -> dict:
+    """Look up readable slugs or legacy hexadecimal IDs."""
     for a in _accounts:
-        if a["id"] == acc_id:
+        if acc_id in (a.get("slug"), a["id"]):
             return a
     raise KeyError(acc_id)
 

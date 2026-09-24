@@ -79,7 +79,7 @@ Three providers selected by model name:
 | `gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`… (catalog from Codex) | persistent `codex app-server`, ephemeral thread per request | ChatGPT (`codex login`) |
 | `gemini-3-pro`, `gemini-3-flash`, `gemini-*`, `gemma-*`, `gpt-oss-*` | ephemeral `antigravity -p --output-format stream-json` | Google AI (Antigravity CLI Google login) |
 
-**Open WebUI names**: `/v1/models` prefixes display names with console accounts. “Mac · Sonnet” (`<account-id>/sonnet`) uses that account only; “Auto · Sonnet” (`sonnet`) selects the first available account with failover. IDs remain stable on rename. Disable entries with `REMOTE_MODELS_AUTO=0` or `REMOTE_MODELS_PER_ACCOUNT=0`.
+**Open WebUI names**: `/v1/models` prefixes display names by account. “Mac · Sonnet” (`<account>/sonnet`) uses that account only; “Auto · Sonnet” (`sonnet`) selects an available account with failover. Slugs come from the initial label (“Claude account” → `claude-account`) and **remain stable on rename**. System accounts retain `system-<provider>`; old hexadecimal IDs remain accepted. Disable entries with `REMOTE_MODELS_AUTO=0` or `REMOTE_MODELS_PER_ACCOUNT=0`.
 
 `gemini-*`, `gemma-*` and `gpt-oss-*` names use Antigravity CLI and fail explicitly when it is missing. Unknown OpenAI-style names use the default Codex model (`REMOTE_CODEX_MODEL` or the advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex uses `baseInstructions`, disabled tools, a read-only sandbox and native strict `json_schema` enforcement through `outputSchema`.
 
@@ -141,7 +141,7 @@ On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v
   - **Multiple accounts per provider**, ordered by priority: tested Claude setup tokens, Codex device-code login with isolated `CODEX_HOME`/app-server, and Antigravity server-terminal login with isolated `HOME`;
   - **Automatic failover**: quota/authentication failure before the first output pauses the account (until quota reset or 15 minutes, or 10 minutes for authentication) and retries the next account;
   - per-account quotas, testing, activation, renaming, token replacement/reconnection and deletion. System accounts use host login; `REMOTE_SYSTEM_ACCOUNTS` (`SYSTEM_ACCOUNTS`) selects maintained providers, empty for none, defaulting to `antigravity` on the cluster. Excluded accounts are not recreated and can be deleted;
-  - per-account **model lists** with explicit `<account-id>/<model>` request names and a copyable `openai/…` form for LiteLLM;
+  - per-account **model lists** with explicit request names such as `claude-account/sonnet`, copyable as `openai/…` for LiteLLM;
   - `sk-cr-…` API keys stored as hashes, displayed once, with Python / curl / Open WebUI examples.
 - **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
 - **LiteLLM** runs alongside Open WebUI as another `/v1` client, with its own revocable `sk-cr` key and the same usage limits. It serves `opus` / `sonnet` / `haiku` / `fable` with virtual keys and team budgets, and can connect external providers such as OpenAI, Gemini or Mistral.

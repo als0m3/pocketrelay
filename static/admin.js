@@ -203,7 +203,7 @@ function accModels(a) {
   const list = (S.models || {})[a.provider] || [];
   if (!list.length) return null;
   const row = m => {
-    const name = `${a.id}/${m.id}`;
+    const name = `${a.slug || a.id}/${m.id}`;
     return h("div", { class: "acc-model" },
       h("span", { class: "mname" }, m.name),
       h("code", { class: "mono" }, name),
