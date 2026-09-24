@@ -36,6 +36,7 @@ AUTH_PAUSE = 10 * 60            # Avoid retrying signed-out accounts on every re
 # slugs would disappear before routing and silently fall back to Auto.
 RESERVED = {"anthropic", "claude", "claude-code", "openai", "google", "antigravity", "gemini",
             "codex", "system", "auto"}
+DEFAULT_SYSTEM_LABEL = "Host login"
 
 _lock = threading.RLock()
 _accounts: list[dict] = []
@@ -62,13 +63,18 @@ def _load():
         for a in orphans:
             _accounts.remove(a)
             _state.pop(a["id"], None)
-        without_slug = [a for a in _accounts if not a.get("slug")]
+        without_slug = [a for a in _accounts if not a.get("slug")
+                        or (a["system"] and a["label"] != DEFAULT_SYSTEM_LABEL
+                            and a["slug"] == f"system-{a['provider']}")]
         for a in without_slug:
-            a["slug"] = f"system-{a['provider']}" if a["system"] else _unique_slug(_slugify(a["label"]), a["id"])
+            if a["system"] and a["label"] == DEFAULT_SYSTEM_LABEL:
+                a["slug"] = f"system-{a['provider']}"
+            else:
+                _rename(a, a["label"])
         missing = [p for p in SYSTEM_ACCOUNTS if not any(a["system"] and a["provider"] == p for a in _accounts)]
         if missing or orphans or without_slug:
             _accounts += [{"id": f"system-{p}", "slug": f"system-{p}", "provider": p,
-                           "label": "Host login", "enabled": True, "system": True,
+                           "label": DEFAULT_SYSTEM_LABEL, "enabled": True, "system": True,
                            "created": time.time()} for p in missing]
             _save()
         return
@@ -95,11 +101,22 @@ def _slugify(text: str) -> str:
 def _unique_slug(base: str, skip: str | None = None) -> str:
     base = base or "account"
     taken = {a.get("slug") for a in _accounts if a["id"] != skip}
+    taken |= {x for a in _accounts if a["id"] != skip for x in a.get("aliases") or []}
     slug, n = base, 1
     while slug in taken or slug in RESERVED:
         n += 1
         slug = f"{base}-{n}"
     return slug
+
+
+def _rename(acc: dict, label: str):
+    """Follow label changes and retain the previous slug as an alias for existing clients."""
+    acc["label"] = label
+    slug = _unique_slug(_slugify(label), acc["id"])
+    if slug != acc.get("slug"):
+        if old := acc.get("slug"):
+            acc["aliases"] = [x for x in (acc.get("aliases") or []) if x != slug] + [old]
+        acc["slug"] = slug
 
 
 def _new(provider: str, label: str) -> dict:
@@ -124,9 +141,9 @@ with _lock:
 # ---------- lecture ----------
 
 def get(acc_id: str) -> dict:
-    """Look up readable slugs or legacy hexadecimal IDs."""
+    """Look up a readable slug, previous slug or legacy identifier."""
     for a in _accounts:
-        if acc_id in (a.get("slug"), a["id"]):
+        if acc_id in (a.get("slug"), a["id"]) or acc_id in (a.get("aliases") or []):
             return a
     raise KeyError(acc_id)
 
@@ -227,7 +244,7 @@ def update(acc_id: str, patch: dict) -> dict:
     with _lock:
         acc = get(acc_id)
         if "label" in patch:
-            acc["label"] = str(patch["label"]).strip() or acc["label"]
+            _rename(acc, str(patch["label"]).strip() or acc["label"])
         if "enabled" in patch:
             acc["enabled"] = bool(patch["enabled"])
         _save()

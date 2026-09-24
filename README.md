@@ -79,7 +79,7 @@ Three providers selected by model name:
 | `gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`… (catalog from Codex) | persistent `codex app-server`, ephemeral thread per request | ChatGPT (`codex login`) |
 | `gemini-3-pro`, `gemini-3-flash`, `gemini-*`, `gemma-*`, `gpt-oss-*` | ephemeral `antigravity -p --output-format stream-json` | Google AI (Antigravity CLI Google login) |
 
-**Open WebUI names**: `/v1/models` prefixes display names by account. “Mac · Sonnet” (`<account>/sonnet`) uses that account only; “Auto · Sonnet” (`sonnet`) selects an available account with failover. Slugs come from the initial label (“Claude account” → `claude-account`) and **remain stable on rename**. System accounts retain `system-<provider>`; old hexadecimal IDs remain accepted. Disable entries with `REMOTE_MODELS_AUTO=0` or `REMOTE_MODELS_PER_ACCOUNT=0`.
+**Open WebUI names**: account-prefixed models use one account; Auto entries allow failover. Slugs follow labels (“Claude account” → `claude-account`), while unrenamed system accounts retain `system-<provider>`. Renaming **updates the slug**, retaining previous slugs and old hexadecimal IDs as aliases so configured clients keep working. Disable entries with `REMOTE_MODELS_AUTO=0` or `REMOTE_MODELS_PER_ACCOUNT=0`.
 
 `gemini-*`, `gemma-*` and `gpt-oss-*` names use Antigravity CLI and fail explicitly when it is missing. Unknown OpenAI-style names use the default Codex model (`REMOTE_CODEX_MODEL` or the advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex uses `baseInstructions`, disabled tools, a read-only sandbox and native strict `json_schema` enforcement through `outputSchema`.
 
