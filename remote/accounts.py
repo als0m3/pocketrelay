@@ -1,11 +1,11 @@
-"""Subscription accounts (Claude, Codex and Gemini), ordered by provider priority.
+"""Subscription accounts (Claude, Codex and Antigravity), ordered by provider priority.
 
 Requests select the first active, available account. Account-related
 failures before any output (quota exhaustion or lost authentication)
 pause that account and retry with the next one.
 
 Each provider system account uses authentication from
-default host credentials (`claude login`, `~/.codex` or $CODEX_HOME, `~/.gemini`).
+default host credentials (`claude login`, `~/.codex` or $CODEX_HOME, Antigravity `~/.gemini`).
 """
 
 import json
@@ -21,7 +21,7 @@ from .config import DATA
 FILE = DATA / "accounts.json"
 STATE_FILE = DATA / "accounts_state.json"
 DIR = DATA / "accounts"
-PROVIDERS = ("claude", "codex", "gemini")
+PROVIDERS = ("claude", "codex", "antigravity")
 # Maintained host-login providers: empty for none on a cluster without host
 # credentials; an absent variable retains all three for development machines.
 _env = os.environ.get("REMOTE_SYSTEM_ACCOUNTS")
@@ -50,8 +50,13 @@ def _load():
         _accounts = json.loads(FILE.read_text())
         _state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
         # Add the Gemini system account to existing installations.
+        # Remove system accounts for providers replaced by Antigravity.
+        orphans = [a for a in _accounts if a["system"] and a["provider"] not in PROVIDERS]
+        for a in orphans:
+            _accounts.remove(a)
+            _state.pop(a["id"], None)
         missing = [p for p in SYSTEM_ACCOUNTS if not any(a["system"] and a["provider"] == p for a in _accounts)]
-        if missing:
+        if missing or orphans:
             _accounts += [{"id": f"system-{p}", "provider": p, "label": "Host login",
                            "enabled": True, "system": True, "created": time.time()} for p in missing]
             _save()
@@ -117,21 +122,16 @@ def codex_home(acc: dict) -> str | None:
     return str(DIR / acc["id"] / "codex")
 
 
-def gemini_home(acc: dict) -> str | None:
-    """Account GEMINI_CLI_HOME; the CLI creates a .gemini subdirectory."""
+def cli_home(acc: dict, name: str) -> str:
+    """Dedicated account HOME for CLIs storing state under ~.
+
+    System accounts also write to the persistent volume rather than the
+    ephemeral process HOME. Override with $<NAME>_HOME, for example to use
+    the actual HOME on a development machine.
+    """
     if acc["system"]:
-        return os.environ.get("GEMINI_CLI_HOME") or None
-    return str(DIR / acc["id"] / "gemini")
-
-
-def gemini_creds_path(acc: dict) -> Path | None:
-    home = gemini_home(acc)
-    return Path(home) / ".gemini" / "oauth_creds.json" if home else None
-
-
-def gemini_connected(acc: dict) -> bool:
-    p = gemini_creds_path(acc)
-    return bool(p and p.exists())
+        return os.environ.get(f"{name.upper()}_HOME") or str(DATA / name)
+    return str(DIR / acc["id"] / name)
 
 
 def available(acc: dict) -> bool:
@@ -171,32 +171,21 @@ def add_codex(label: str) -> dict:
     return acc
 
 
-def add_gemini(label: str) -> dict:
+def add_antigravity(label: str) -> dict:
     with _lock:
-        acc = _new("gemini", label)
-        Path(gemini_home(acc), ".gemini").mkdir(parents=True, exist_ok=True)
+        acc = _new("antigravity", label)
+        Path(cli_home(acc, "antigravity")).mkdir(parents=True, exist_ok=True)
         _save()
     return acc
 
 
-def set_gemini_creds(acc_id: str, creds: str):
-    """Write account oauth_creds.json produced after CLI Google login."""
+def clear_cli_home(acc_id: str, name: str):
+    """Delete CLI state and credentials for this account."""
     with _lock:
-        acc = get(acc_id)
-        path = gemini_creds_path(acc)
-        if path is None:
-            raise ValueError("The system account uses host credentials.")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(creds)
-        path.chmod(0o600)
-        resume(acc_id)
-
-
-def clear_gemini_creds(acc_id: str):
-    with _lock:
-        path = gemini_creds_path(get(acc_id))
-        if path and path.exists():
-            path.unlink()
+        h = cli_home(get(acc_id), name)
+        if h:
+            shutil.rmtree(h, ignore_errors=True)
+            Path(h).mkdir(parents=True, exist_ok=True)
 
 
 def set_token(acc_id: str, tok: str):
@@ -291,7 +280,4 @@ def public(acc: dict) -> dict:
     if acc["provider"] == "claude" and not acc["system"]:
         tok = token(acc) or ""
         out["masked"] = tok[:14] + "…" + tok[-4:] if tok else None
-    if acc["provider"] == "gemini":
-        # System accounts also require oauth_creds.json to be connected.
-        out["connected"] = gemini_connected(acc)
     return out

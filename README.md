@@ -77,11 +77,11 @@ Three providers selected by model name:
 |---|---|---|
 | `opus`, `sonnet`, `haiku`, `fable`, `claude-*` | ephemeral `claude -p` | Claude (`claude login` / `claude setup-token`) |
 | `gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`… (catalog from Codex) | persistent `codex app-server`, ephemeral thread per request | ChatGPT (`codex login`) |
-| `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro/flash`, `gemini-*`, `gemma-*` | ephemeral `gemini --output-format stream-json` | Google AI Pro / Ultra (CLI Google login) |
+| `gemini-3-pro`, `gemini-3-flash`, `gemini-*`, `gemma-*`, `gpt-oss-*` | ephemeral `antigravity -p --output-format stream-json` | Google AI (Antigravity CLI Google login) |
 
 **Open WebUI names**: `/v1/models` prefixes display names with console accounts. “Mac · Sonnet” (`<account-id>/sonnet`) uses that account only; “Auto · Sonnet” (`sonnet`) selects the first available account with failover. IDs remain stable on rename. Disable entries with `REMOTE_MODELS_AUTO=0` or `REMOTE_MODELS_PER_ACCOUNT=0`.
 
-`gemini-*` and `gemma-*` names use Gemini CLI and fail explicitly if it is missing. Unknown OpenAI-style names use the default Codex model (`REMOTE_CODEX_MODEL` or the advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex uses `baseInstructions`, disabled tools and a read-only sandbox, with native strict `json_schema` enforcement through `outputSchema`.
+`gemini-*`, `gemma-*` and `gpt-oss-*` names use Antigravity CLI and fail explicitly when it is missing. Unknown OpenAI-style names use the default Codex model (`REMOTE_CODEX_MODEL` or the advertised default); other names use `REMOTE_OAI_MODEL` (Claude, default `sonnet`). Codex uses `baseInstructions`, disabled tools, a read-only sandbox and native strict `json_schema` enforcement through `outputSchema`.
 
 **Codex PDF inputs** are converted with `pypdfium2`: extract text per page and render scanned/image pages as PNG (≤ 2048 pixels, `detail: high`). Configure `REMOTE_PDF_MODE` (`auto`, `images` for all pages, or `text`), `REMOTE_PDF_MAX_IMAGE_PAGES` (20) and `REMOTE_PDF_MAX_TEXT_CHARS` (400,000). Prefer `gpt-5.6-sol` or above for scans because `luna` makes OCR errors. Claude reads PDFs natively.
 
@@ -91,7 +91,7 @@ Each request launches an ephemeral `claude -p` process **without Claude Code too
 - `temperature`, `top_p`, `max_tokens`, `seed` and `logprobs` are ignored;
 - the CLI adds a short Claude Agent SDK preamble to the system prompt.
 
-**Gemini** launches an ephemeral CLI per request without tools (`tools.core: []` and exclusions), uses `GEMINI_SYSTEM_MD` for client system instructions and isolates accounts with `GEMINI_CLI_HOME`. API-key variables are removed to use the subscription. Images are unsupported; PDFs become text with scanned pages omitted. Response formats and tool calls are prompt-emulated. Settings: `REMOTE_ENABLE_GEMINI=0` to disable, `REMOTE_GEMINI_MODELS`, `REMOTE_GEMINI_MODEL`, `REMOTE_GEMINI_FAST_MODEL` for account tests, and `GEMINI_BIN`.
+**Antigravity** launches an ephemeral `antigravity -p` process in an empty working directory. It maps `reasoning_effort` to `--effort` and response formats to native `--json-schema`, with account state and Google sessions isolated in `HOME`. API-key variables are removed to use the subscription. The CLI cannot replace system instructions, so client instructions are prepended in `<system_instructions>` tags. Images are unsupported; PDFs become text with scanned pages omitted. CLI tools remain available, but the working directory is temporary and headless approval requests are rejected. Configure `REMOTE_ENABLE_ANTIGRAVITY`, `REMOTE_ANTIGRAVITY_MODELS`, `REMOTE_ANTIGRAVITY_MODEL`, `REMOTE_ANTIGRAVITY_FAST_MODEL`, `ANTIGRAVITY_BIN` and system-account `ANTIGRAVITY_HOME`. Run `antigravity models` after login for exact model slugs.
 
 `REMOTE_OAI_DEBUG=1` logs unrecognized tool output.
 
@@ -117,33 +117,30 @@ docker run -d --name open-webui-customremote -p 3000:8080 \
 
 The server can execute code on your machine through Claude. It binds to `127.0.0.1`, requires a token and rejects unknown `Host` headers to prevent DNS rebinding. For phone access, prefer Tailscale (`REMOTE_HOST=<tailscale-ip>` and `REMOTE_ALLOWED_HOSTS`) over public exposure.
 
-### Gemini accounts
+### Antigravity accounts
 
-Gemini CLI does not offer remotely controlled device-code login: Google OAuth requires
-a browser that can reach the CLI host. Import credentials manually,
-as with Claude tokens; the CLI then renews them using its refresh_token:
-
-```bash
-gemini                          # On a browser-equipped host, choose Sign in with Google.
-cat ~/.gemini/oauth_creds.json   # Paste this into /admin.
-```
-
-Alternatively, sign in directly inside the pod, whose credential directory is on the volume:
+Antigravity replaced Gemini CLI for individual accounts in June 2026. Google
+login requires a **controlling terminal** (`/dev/tty`), so the console cannot drive it,
+and keychain-backed tokens cannot simply be copied from another machine.
+Create the account in `/admin`, which displays the server command to run:
 
 ```bash
 oc -n custom-remote exec -it deploy/claude-api -- \
-  env GEMINI_CLI_HOME=/data/accounts/<account-id>/gemini NO_BROWSER=1 gemini
-# Open the displayed URL and enter the code shown after Google authorization.
+  env HOME=/data/accounts/<account-id>/antigravity antigravity
+# Open the CLI URL in your browser, authorize access and paste the code back.
 ```
+
+`-it` is required: login fails without a terminal. The system account uses
+`ANTIGRAVITY_HOME` (`/data/antigravity`) on the volume to survive restarts.
 
 ## OKD deployment (gateway + Open WebUI + LiteLLM + SSO)
 
 On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v1` and the **`/admin` console**; Claude Code sessions are disabled with `REMOTE_ENABLE_SESSIONS=0`.
 
 - **`/admin` console** (OIDC SSO, administrators allowlisted by email or Keycloak group/role; master-token recovery):
-  - **Multiple accounts per provider**, ordered by priority: Claude setup tokens tested on addition, Codex device-code login with isolated `CODEX_HOME`/app-server, and Gemini credential import with isolated `GEMINI_CLI_HOME`;
+  - **Multiple accounts per provider**, ordered by priority: tested Claude setup tokens, Codex device-code login with isolated `CODEX_HOME`/app-server, and Antigravity server-terminal login with isolated `HOME`;
   - **Automatic failover**: quota/authentication failure before the first output pauses the account (until quota reset or 15 minutes, or 10 minutes for authentication) and retries the next account;
-  - per-account quotas, testing, activation, renaming, token replacement/reconnection and deletion. System accounts use host login; `REMOTE_SYSTEM_ACCOUNTS` (`SYSTEM_ACCOUNTS`) selects maintained providers, empty for none, defaulting to `gemini` on the cluster. Excluded system accounts are not recreated and can be deleted;
+  - per-account quotas, testing, activation, renaming, token replacement/reconnection and deletion. System accounts use host login; `REMOTE_SYSTEM_ACCOUNTS` (`SYSTEM_ACCOUNTS`) selects maintained providers, empty for none, defaulting to `antigravity` on the cluster. Excluded accounts are not recreated and can be deleted;
   - `sk-cr-…` API keys stored as hashes, displayed once, with Python / curl / Open WebUI examples.
 - **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
 - **LiteLLM** runs alongside Open WebUI as another `/v1` client, with its own revocable `sk-cr` key and the same usage limits. It serves `opus` / `sonnet` / `haiku` / `fable` with virtual keys and team budgets, and can connect external providers such as OpenAI, Gemini or Mistral.

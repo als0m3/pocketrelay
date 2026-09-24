@@ -1,7 +1,7 @@
 FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="custom-remote" \
-      org.opencontainers.image.description="OpenAI-compatible gateway (Claude, Codex, Gemini) and token console" \
+      org.opencontainers.image.description="OpenAI-compatible API gateway (Claude, Codex, Antigravity) and account console" \
       org.opencontainers.image.source="https://github.com/als0m3/custom-remote" \
       org.opencontainers.image.authors="Als0m3"
 
@@ -19,15 +19,10 @@ ARG CODEX_VERSION=0.155.1
 RUN curl -fsSL "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-x86_64-unknown-linux-musl.tar.gz" \
     | tar xz -C /tmp && mv /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex && codex --version
 
-# Gemini CLI (Google AI Pro / Ultra): npm package requiring Node.
-ARG NODE_VERSION=24.21.0
-ARG GEMINI_VERSION=0.60.0
-RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
-    | tar xz -C /usr/local --strip-components=1 \
-      --exclude=CHANGELOG.md --exclude=LICENSE --exclude=README.md \
-    && npm install -g "@google/gemini-cli@${GEMINI_VERSION}" \
-    && npm cache clean --force && rm -rf /usr/local/include/node \
-    && gemini --version
+# Antigravity CLI (Google AI subscription): standalone Go binary replacing the Gemini CLI
+ARG ANTIGRAVITY_VERSION=1.2.10
+RUN curl -fsSL "https://github.com/google-antigravity/antigravity-cli/releases/download/${ANTIGRAVITY_VERSION}/agy_cli_linux_x64.tar.gz" \
+    | tar xz -C /usr/local/bin && antigravity --version
 
 WORKDIR /app
 COPY pyproject.toml ./
@@ -40,7 +35,7 @@ RUN mkdir -p /data && chgrp -R 0 $HOME /data && chmod -R g=u $HOME /data
 ENV REMOTE_DATA=/data REMOTE_HOST=0.0.0.0 REMOTE_PORT=8787 REMOTE_ENABLE_SESSIONS=0 \
     DISABLE_AUTOUPDATER=1 CLAUDE_BIN=/usr/local/bin/claude PYTHONUNBUFFERED=1 \
     CODEX_BIN=/usr/local/bin/codex CODEX_HOME=/data/codex \
-    GEMINI_BIN=/usr/local/bin/gemini GEMINI_CLI_HOME=/data/gemini
+    ANTIGRAVITY_BIN=/usr/local/bin/antigravity ANTIGRAVITY_HOME=/data/antigravity
 USER 1001
 EXPOSE 8787
 CMD ["python", "-m", "remote"]
