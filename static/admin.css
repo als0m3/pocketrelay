@@ -235,3 +235,13 @@ dialog::backdrop { background: rgba(20, 18, 15, .45); backdrop-filter: blur(3px)
   .keys-form { flex-direction: column; }
   .brand small, .chip .who { display: none; }
 }
+
+/* account models: identifier to request for this account */
+.acc-models { margin: 10px 0 2px; }
+.acc-models > summary { cursor: pointer; font-size: 12px; color: var(--text-2); user-select: none; }
+.acc-models > summary:hover { color: var(--text); }
+.acc-models .hint { font-size: 11.5px; color: var(--text-3); margin: 8px 0 6px; line-height: 1.5; }
+.acc-model { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.acc-model .mname { font-size: 12px; color: var(--text-2); min-width: 92px; }
+.acc-model code { font-size: 11.5px; background: var(--sunken); padding: 2px 7px; border-radius: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -186,6 +186,7 @@ function renderAccounts(provider) {
         toggle),
       h("div", { class: "acc-id" }, identity(a)),
       meters(a),
+      accModels(a),
       notes,
       h("div", { class: "acc-foot" },
         h("span", { class: "stat" }, `${a.requests || 0} request${(a.requests || 0) !== 1 ? "s" : ""} · ${ago(a.last_used)}`),
@@ -195,6 +196,25 @@ function renderAccounts(provider) {
         h("button", { class: "btn ghost icon", title: "Move down", disabled: i === list.length - 1, onclick: () => act(() => call(`/admin/api/accounts/${a.id}/move`, "POST", { delta: 1 })) }, icon("down")),
         h("button", { class: "btn ghost icon", title: "More", onclick: e => accountMenu(a, e.currentTarget) }, icon("dots"))));
   }));
+}
+
+// Names targeting this account: <account>/<model>, prefixed with openai/ for LiteLLM.
+function accModels(a) {
+  const list = (S.models || {})[a.provider] || [];
+  if (!list.length) return null;
+  const row = m => {
+    const name = `${a.id}/${m.id}`;
+    return h("div", { class: "acc-model" },
+      h("span", { class: "mname" }, m.name),
+      h("code", { class: "mono" }, name),
+      h("button", { class: "btn ghost icon", title: `Copy for LiteLLM: openai/${name}`,
+        onclick: () => copy(`openai/${name}`, "LiteLLM name copied") }, icon("copy")));
+  };
+  return h("details", { class: "acc-models" },
+    h("summary", {}, `Models for this account (${list.length})`),
+    h("p", { class: "hint" }, "Use this name to select the account without failover. The button copies the LiteLLM form (",
+      h("code", {}, "openai/…"), "); other clients use the name directly."),
+    ...list.map(row));
 }
 
 async function act(fn, okMsg) {

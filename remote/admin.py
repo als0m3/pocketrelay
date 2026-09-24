@@ -144,8 +144,23 @@ async def state(request: Request):
         "antigravity_enabled": antigravity_backend.ENABLED,
         # Providers without maintained system accounts become deletable.
         "deletable_system": [p for p in accounts.PROVIDERS if p not in accounts.SYSTEM_ACCOUNTS],
+        "models": await _models(),
         "accounts": {p: [accounts.public(a) for a in accounts.listing(p)] for p in accounts.PROVIDERS},
     }
+
+
+async def _models() -> dict:
+    """Provider model catalogs for building account/model IDs in the console."""
+    out = {"claude": [{"id": m, "name": n} for m, n in openai_compat.CLAUDE_NAMES.items()], "codex": []}
+    if antigravity_backend.ENABLED:
+        out["antigravity"] = [{"id": m, "name": n} for m, n in antigravity_backend.MODELS.items()]
+    if codex_backend.ENABLED:
+        try:
+            out["codex"] = [{"id": m["id"], "name": m.get("displayName") or m["id"]}
+                            for m in await codex_backend.list_models()]
+        except Exception:
+            pass
+    return out
 
 
 async def _refresh_identity(acc: dict):
