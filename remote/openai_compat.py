@@ -151,7 +151,15 @@ async def _resolve_plain(m: str) -> str:
             return m
         if m == "codex" or m.startswith(("codex/", "gpt", "o1", "o3", "o4", "chatgpt")):
             sub = m.removeprefix("codex/")
-            return sub if sub in ids else await codex_backend.default_model()
+            if sub in ids:
+                return sub
+            if REQUIRE_ACCOUNT:   # No silent fallback to the default Codex model.
+                raise OAIError(400, f"Unknown Codex model: {m}. Use a name listed by /v1/models.",
+                               param="model", code="model_not_found")
+            return await codex_backend.default_model()
+    if REQUIRE_ACCOUNT:
+        raise OAIError(400, f"Unknown model: {m}. Use a name listed by /v1/models.",
+                       param="model", code="model_not_found")
     return DEFAULT_MODEL  # Unknown names use the default Claude model.
 
 
@@ -171,6 +179,10 @@ async def run_llm(system: str, blocks: list[dict], model: str, effort: str | Non
     names, such as <id>/sonnet, use only that account.
     """
     pinned, model = split_account(model)
+    if REQUIRE_ACCOUNT and not pinned:
+        raise OAIError(400, f"Specify the account: <account>/{model}, for example from "
+                            "/v1/models. No default account is selected for you.",
+                       param="model", code="account_required")
     provider = provider_of(model)
     if provider == "antigravity" and not antigravity_backend.ENABLED:
         raise OAIError(503, f"Model {model} requires Antigravity CLI, which is not installed.", "api_error",
@@ -636,7 +648,10 @@ def sse(obj) -> str:
 # ---------- /v1/models ----------
 
 CLAUDE_NAMES = {"opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku", "fable": "Fable"}
-LIST_AUTO = os.environ.get("REMOTE_MODELS_AUTO", "1") == "1"            # « Auto · … » : bascule entre comptes
+# Require account/model names without Auto, failover or default model routing.
+# Set REMOTE_REQUIRE_ACCOUNT=0 to restore the previous behavior.
+REQUIRE_ACCOUNT = os.environ.get("REMOTE_REQUIRE_ACCOUNT", "1") == "1"
+LIST_AUTO = os.environ.get("REMOTE_MODELS_AUTO", "1") == "1" and not REQUIRE_ACCOUNT  # « Auto · … »
 LIST_PER_ACCOUNT = os.environ.get("REMOTE_MODELS_PER_ACCOUNT", "1") == "1"  # Account-prefixed entries pin the account.
 
 

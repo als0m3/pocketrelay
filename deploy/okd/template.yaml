@@ -56,10 +56,14 @@ parameters:
     description: Maximum concurrent model requests; additional requests are queued
     value: "6"
   - name: DEFAULT_MODEL
-    value: sonnet
+    description: "Default Open WebUI model, including its account/model prefix"
+    value: account-claude/sonnet
   - name: TASK_MODEL
-    description: Model for Open WebUI background tasks (titles, tags, suggestions)
-    value: haiku
+    description: "Open WebUI background-task model, including an account prefix"
+    value: account-claude/haiku
+  - name: REQUIRE_ACCOUNT
+    description: "1 requires explicit account/model names, disabling Auto, failover and default models"
+    value: "1"
   - name: SYSTEM_ACCOUNTS
     description: "Providers retaining host-login accounts, comma-separated; empty for none. Only Antigravity uses this on the cluster through oc exec."
     value: antigravity
@@ -95,7 +99,7 @@ objects:
                 - {name: REMOTE_ALLOWED_HOSTS, value: "${API_HOST},${PUBLIC_API_HOST},claude-api"}
                 - {name: REMOTE_PUBLIC_URL, value: "https://${PUBLIC_API_HOST}"}
                 - {name: REMOTE_HTTPS, value: "1"}
-                - {name: REMOTE_OAI_MODEL, value: "${DEFAULT_MODEL}"}
+                - {name: REMOTE_REQUIRE_ACCOUNT, value: "${REQUIRE_ACCOUNT}"}
                 - {name: REMOTE_OIDC_ISSUER, value: "${OIDC_ISSUER}"}
                 - {name: REMOTE_OIDC_CLIENT_ID, value: "${OIDC_CLIENT_ID}"}
                 - {name: REMOTE_ADMIN_EMAILS, value: "${ADMIN_EMAILS}"}
