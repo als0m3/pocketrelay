@@ -13,7 +13,7 @@ import shutil
 import time
 
 from . import accounts, pdf
-from .config import DATA
+from .config import DATA, clean_env
 
 CODEX_BIN = os.environ.get("CODEX_BIN") or shutil.which("codex") or ""
 ENABLED = bool(CODEX_BIN) and os.environ.get("REMOTE_ENABLE_CODEX", "1") == "1"
@@ -55,8 +55,7 @@ class AppServer:
             args = [CODEX_BIN, "app-server", "-c", 'web_search="disabled"']
             for f in DISABLED_FEATURES:
                 args += ["--disable", f]
-            env = dict(os.environ)
-            env.pop("OPENAI_API_KEY", None)  # use the ChatGPT subscription
+            env = clean_env()  # Exclude OPENAI_API_KEY to use the ChatGPT subscription.
             if self.codex_home:
                 os.makedirs(self.codex_home, exist_ok=True)
                 env["CODEX_HOME"] = self.codex_home

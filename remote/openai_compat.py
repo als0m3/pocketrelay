@@ -75,6 +75,7 @@ def check_auth(request: Request) -> dict:
 
 async def read_json(request: Request) -> dict:
     ident = check_auth(request)
+    request.state.owner = limits.subject(request.headers, ident)
     try:
         limits.admit(request.headers, ident)
     except limits.LimitError as e:
@@ -895,6 +896,18 @@ async def completions(request: Request):
 # ---------- /v1/responses ----------
 
 RESPONSES: "OrderedDict[str, dict]" = OrderedDict()  # In-memory previous_response_id storage.
+RESPONSES_MAX_BYTES = int(os.environ.get("REMOTE_RESPONSES_MAX_MB", "64")) * 1024 * 1024
+
+
+def _remember(rid: str, owner: str, turns: list[dict]):
+    """Store responses for their owner within a memory budget including attachments."""
+    size = sum(len(b.get("text") or "") + len((b.get("source") or {}).get("data") or "")
+               for t in turns for b in t["blocks"])
+    if not RESPONSES_MAX_BYTES or size > RESPONSES_MAX_BYTES:  # Zero disables storage.
+        return
+    RESPONSES[rid] = {"turns": turns, "owner": owner, "size": size}
+    while len(RESPONSES) > 500 or sum(r["size"] for r in RESPONSES.values()) > RESPONSES_MAX_BYTES:
+        RESPONSES.popitem(last=False)
 
 
 async def responses_turns(inp) -> tuple[list[str], list[dict]]:
@@ -934,12 +947,13 @@ async def responses_turns(inp) -> tuple[list[str], list[dict]]:
 @router.post("/responses")
 async def responses(request: Request):
     body = await read_json(request)
+    owner = request.state.owner
     model = await resolve_model(body.get("model"))
     system, turns = await responses_turns(body.get("input", ""))
     prev_id = body.get("previous_response_id")
     if prev_id:
-        prev = RESPONSES.get(prev_id)
-        if not prev:
+        prev = RESPONSES.get(prev_id) if isinstance(prev_id, str) else None
+        if not prev or prev["owner"] != owner:  # Hide responses belonging to other callers.
             raise OAIError(404, f"Previous response with id '{prev_id}' not found.", param="previous_response_id")
         turns = prev["turns"] + turns
     if body.get("instructions"):
@@ -981,9 +995,7 @@ async def responses(request: Request):
         if resp["store"]:
             history = turns + [{"role": "assistant", "blocks": [{"type": "text", "text": text}] if text else [],
                                 "tool_calls": [{"name": c["name"], "arguments": c["arguments"]} for c in calls]}]
-            RESPONSES[rid] = {"turns": history}
-            while len(RESPONSES) > 500:
-                RESPONSES.popitem(last=False)
+            _remember(rid, owner, history)
         return resp
 
     if not body.get("stream"):

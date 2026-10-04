@@ -13,11 +13,14 @@ accounts in June 2026, is no longer used.
 import asyncio
 import json
 import os
+import re
 import shutil
+import sqlite3
 import tempfile
+from pathlib import Path
 
 from . import accounts, pdf
-from .config import DATA
+from .config import DATA, clean_env
 
 BIN = os.environ.get("ANTIGRAVITY_BIN") or shutil.which("antigravity") or shutil.which("agy") or ""
 ENABLED = bool(BIN) and os.environ.get("REMOTE_ENABLE_ANTIGRAVITY", "1") == "1"
@@ -55,16 +58,37 @@ def login_command(acc: dict) -> str:
 
 
 def child_env(h: str) -> dict:
-    env = dict(os.environ)
-    # Remove API keys to use subscription access rather than billed API access.
-    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI"):
-        env.pop(k, None)
+    # Allowlist the environment, excluding gateway secrets and provider API keys
+    # to use subscription access rather than billed API access.
+    env = clean_env()
     if h:
         os.makedirs(h, exist_ok=True)
         env["HOME"] = h
     env["NO_COLOR"] = "1"
     env["TERM"] = "dumb"
     return env
+
+
+def purge(h: str, cid: str):
+    """Delete CLI-retained conversation data because there is no nonpersistent mode.
+
+    Remove conversation files, transcript/annotation data, its summary database
+    row (including prompt-derived title and preview) and regenerated summary caches.
+    """
+    if not re.fullmatch(r"[0-9a-f-]{36}", cid or ""):
+        return
+    base = Path(h) / ".gemini" / "antigravity-cli"
+    for p in base.glob(f"*/{cid}*"):
+        shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+    for name in ("jetbox_summaries_proto.pb", "cache/last_conversations.json", "cache/conversation_metadata.json"):
+        (base / name).unlink(missing_ok=True)
+    db = base / "conversation_summaries.db"
+    if db.exists():
+        try:
+            with sqlite3.connect(db, timeout=2) as con:
+                con.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?", (cid,))
+        except sqlite3.Error:
+            pass
 
 
 def to_prompt(system: str, blocks: list[dict]) -> str:
@@ -111,16 +135,19 @@ async def run_antigravity(system: str, blocks: list[dict], model: str, effort: s
     WORKDIR.mkdir(parents=True, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="agy-", dir=WORKDIR)
     args = [BIN, "-p", prompt, "--output-format", "stream-json", "--model", model,
-            "--disable-slash-commands"]      # Client prompts are not CLI commands.
+            "--disable-slash-commands",      # Client prompts are not CLI commands.
+            "--log-file", os.path.join(tmp, "cli.log")]   # Discard logs with the working directory.
     if effort in EFFORTS:
         args += ["--effort", effort]
     if schema:
         args += ["--json-schema", json.dumps(schema)]
+    h = home(acc)
     proc = await asyncio.create_subprocess_exec(
-        *args, cwd=tmp, env=child_env(home(acc)), limit=64 * 1024 * 1024,
+        *args, cwd=tmp, env=child_env(h), limit=64 * 1024 * 1024,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     info = {"model": model, "usage": {}}
-    done = False
+    done = streamed = False
+    cid = ""
     try:
         while True:
             try:
@@ -134,17 +161,22 @@ async def run_antigravity(system: str, blocks: list[dict], model: str, effort: s
             except json.JSONDecodeError:
                 continue
             name = ev.get("event")
+            cid = cid or ev.get("conversation_id") or (ev.get("result") or {}).get("conversation_id") or ""
+            # CLI versions expose details either flat or nested under the event name.
             if name == "step_update":
-                if delta := ev.get("text_delta"):
+                if delta := (ev.get("step_update") or ev).get("text_delta"):
+                    streamed = True
                     yield "text", delta
             elif name == "init":
-                info["model"] = ev.get("model") or model
+                info["model"] = (ev.get("init") or ev).get("model") or model
             elif name == "result":
                 res = ev.get("result") or ev
                 status = (res.get("status") or "").upper()
                 if status != "SUCCESS":
                     msg = res.get("error") or f"Antigravity request {status or 'failed'}"
                     raise AntigravityError(str(msg)[:500], _kind(str(msg)))
+                if not streamed and res.get("response"):
+                    yield "text", res["response"]
                 u = res.get("usage") or {}
                 cached = u.get("cache_read_tokens") or 0
                 info["usage"] = {"input_tokens": max(0, (u.get("input_tokens") or 0) - cached),
@@ -165,3 +197,4 @@ async def run_antigravity(system: str, blocks: list[dict], model: str, effort: s
             proc.kill()
         await proc.wait()
         shutil.rmtree(tmp, ignore_errors=True)
+        purge(h, cid)

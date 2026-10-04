@@ -55,6 +55,17 @@ def forwarded_user(headers) -> dict | None:
     return {"id": claims.get("sub"), "email": claims.get("email"), "role": claims.get("role")}
 
 
+def subject(headers, ident: dict) -> str:
+    """Request owner: forwarded gateway user, otherwise the API key."""
+    if ident.get("master"):
+        return "master"
+    if ident.get("key_name") in FORWARDER_KEYS:
+        user = forwarded_user(headers)
+        if user:
+            return f"owui:{user['email'] or user['id']}"
+    return f"key:{ident.get('key_id')}"
+
+
 def admit(headers, ident: dict):
     """Raise LimitError when the caller exceeds its allowance; exempt master/admin access."""
     if not _RATE or ident.get("master"):

@@ -17,7 +17,7 @@ from collections import deque
 from pathlib import Path
 
 from . import accounts, history
-from .config import CLAUDE_BIN, DATA, KEEP_API_KEY
+from .config import CLAUDE_BIN, DATA, KEEP_API_KEY, clean_env
 
 SESSIONS_FILE = DATA / "sessions.json"
 EVENTS_DIR = DATA / "events"
@@ -30,8 +30,9 @@ EFFORTS = ["", "low", "medium", "high", "xhigh", "max"]
 EDITABLE = {"name", "model", "permission_mode", "effort", "append_system_prompt", "pinned"}
 
 
-def child_env(token: str | None = None) -> dict:
-    env = dict(os.environ)
+def child_env(token: str | None = None, full: bool = False) -> dict:
+    """Full local sessions inherit the host environment except REMOTE_* variables."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("REMOTE_")} if full else clean_env()
     drop = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT"]
     if not KEEP_API_KEY:
         drop += ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
@@ -164,7 +165,7 @@ class Session:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env=child_env(accounts.session_token()),
+                env=child_env(accounts.session_token(), full=True),
                 limit=64 * 1024 * 1024,
             )
             proc = self.proc

@@ -347,7 +347,7 @@ async def run_once(body: OneShot):
             "--no-session-persistence"]
     if body.model:
         args += ["--model", body.model]
-    proc = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=child_env(accounts.session_token()),
+    proc = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=child_env(accounts.session_token(), full=True),
                                                 stdin=asyncio.subprocess.DEVNULL,
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:

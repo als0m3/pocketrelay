@@ -36,6 +36,17 @@ CLAUDE_BIN = (
 # Remove ANTHROPIC_API_KEY by default to use the subscription.
 KEEP_API_KEY = os.environ.get("REMOTE_KEEP_API_KEY") == "1"
 
+# Allowlist /v1 CLI environments so gateway secrets (REMOTE_TOKEN, OIDC,
+# session and JWT secrets) never reach prompt-driven processes.
+_ENV_KEEP = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ", "TMPDIR", "TERM",
+             "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR",
+             "NODE_EXTRA_CA_CERTS", "DISABLE_AUTOUPDATER"}
+_ENV_PREFIXES = ("LC_", "XDG_", "CLAUDE_", "ANTHROPIC_", "CODEX_")
+
+
+def clean_env() -> dict:
+    return {k: v for k, v in os.environ.items() if k.upper() in _ENV_KEEP or k.startswith(_ENV_PREFIXES)}
+
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 
 # Local Claude Code sessions and UI: useful locally, disabled on the cluster.
