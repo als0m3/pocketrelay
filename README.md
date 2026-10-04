@@ -150,7 +150,7 @@ On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v
 |---|---|---|
 | `relay.example.test` | LiteLLM (API + SSO console) | `relay-llm.apps.cluster.example.test` |
 | `relay-chat.example.test` | Open WebUI | `relay.apps.cluster.example.test` |
-| `relay-api.example.test` | console `/admin` + `/v1` | `relay-api.apps.cluster.example.test` |
+| `relay-api.example.test` | `/admin` console; `/v1` internal-only for LiteLLM and Open WebUI | `relay-api.apps.cluster.example.test` |
 
 Internal names remain unchanged because changing an OKD route hostname requires recreation. Map public names in `deploy/vps/relay.conf`.
 
