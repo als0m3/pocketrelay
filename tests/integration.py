@@ -78,7 +78,8 @@ with tempfile.TemporaryDirectory(prefix='customremote-integration-') as tmp:
         req(f'/api/sessions/{sid}/messages','POST',{'text':'Hello'},key='fixture-master')
         for _ in range(50):
             r=req(f'/api/sessions/{sid}',key='fixture-master')[0]
-            if r['session']['pending']: break
+            # The pending request can become visible just before the status update.
+            if r['session']['status']=='waiting' and 'permission1' in r['session']['pending']: break
             time.sleep(.05)
         verify(r['session']['status']=='waiting' and 'permission1' in r['session']['pending'],'session requests permission')
         req(f'/api/sessions/{sid}/permissions/permission1','POST',{'behavior':'allow','always':True},key='fixture-master')
