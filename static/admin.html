@@ -3,49 +3,82 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Token console</title>
+<title>PocketRelay · Console</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%231f1d19'/><text x='16' y='21' font-size='14' font-weight='700' text-anchor='middle' fill='white' font-family='monospace'>&gt;_</text></svg>">
 <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
 
+<a class="skip-link" href="#main">Skip to content</a>
+<div id="loading" class="loading-screen" role="status">
+  <div class="mark">&gt;_</div><p>Opening PocketRelay…</p>
+  <button id="retry" class="btn" hidden>Try again</button>
+</div>
+
 <!-- ============ connection ============ -->
 <div id="login" class="login-wrap" hidden>
-  <div class="login">
-    <div class="mark">&gt;_</div>
-    <h1>Token console</h1>
-    <p>Subscription accounts and gateway API keys.</p>
-    <div id="denied" class="denied" hidden></div>
+  <aside class="login-story">
+    <div class="wordmark"><div class="mark">&gt;_</div> PocketRelay</div>
+    <span class="eyebrow">YOUR PERSONAL AI GATEWAY</span>
+    <h1>Your accounts.<br>One API.</h1>
+    <p>Use Claude, ChatGPT and Google in the applications you already know.</p>
+    <ol class="login-benefits"><li>Connect a provider account</li><li>Create a key for your application</li><li>Copy the settings and get started</li></ol>
+    <span class="login-caption">Standalone · OpenAI-compatible · Self-hosted</span>
+  </aside>
+  <section class="login" aria-labelledby="login-title">
+    <span class="eyebrow">YOUR WORKSPACE</span>
+    <h2 id="login-title">Welcome</h2>
+    <p>Sign in to manage your accounts and access.</p>
+    <div id="denied" class="denied" role="alert" hidden></div>
     <button id="oidc-btn" class="btn primary" hidden>Sign in with SSO</button>
-    <div id="or" class="divider" hidden>or</div>
-    <label class="field"><span>Master token</span>
-      <input id="master" class="input mono" type="password" placeholder="REMOTE_TOKEN" autocomplete="current-password">
-    </label>
-    <button id="master-btn" class="btn">Sign in with token</button>
-  </div>
+    <div id="or" class="divider" hidden>or with your local account</div>
+    <form id="password-form" hidden>
+      <label class="field"><span>Username</span><input id="username" class="input" autocomplete="username" required maxlength="80" placeholder="Your username"></label>
+      <label class="field"><span>Password</span><input id="password" class="input" type="password" autocomplete="current-password" required maxlength="256" placeholder="Your password"></label>
+      <label class="show-password"><input id="show-password" type="checkbox"> Show password</label>
+      <button id="password-btn" class="btn primary" type="submit">Sign in <span aria-hidden="true">→</span></button>
+    </form>
+    <div id="setup-help" class="setup-help" hidden><strong>First installation?</strong><p>Run <code>./install.sh</code> in the project directory to set up your username and password.</p></div>
+    <details id="token-help" class="token-help" hidden>
+      <summary>Sign in with the master token</summary>
+      <form id="token-form">
+        <label class="field"><span>Server master token</span><input id="master" class="input mono" type="password" placeholder="Recovery token" autocomplete="off" required></label>
+        <button id="master-btn" class="btn" type="submit">Sign in with token</button>
+      </form>
+    </details>
+    <details class="login-help"><summary>Forgot your password?</summary><p>From a terminal in the project directory:</p><code>docker compose exec customremote customremote setup</code><p>Choose a new password, then sign in again.</p></details>
+  </section>
 </div>
 
 <!-- ============ console ============ -->
 <div id="console" hidden>
   <header class="topbar"><div class="in">
-    <div class="brand"><div class="mark">&gt;_</div>Console <small id="host"></small></div>
+    <div class="brand"><div class="mark">&gt;_</div>PocketRelay <small id="host"></small></div>
+    <nav class="main-nav" aria-label="Main navigation"><a href="#accounts-section">Accounts</a><a href="#keys-section">API keys</a><a href="#guide">Guide</a></nav>
     <div class="spacer"></div>
-    <button id="theme" class="btn ghost icon" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
+    <button id="theme" class="btn ghost icon" title="Change theme" aria-label="Change theme"><svg class="i"><use href="#i-moon"/></svg></button>
     <span class="chip"><span class="avatar" id="avatar">?</span><span class="who" id="who"></span></span>
     <button id="logout" class="btn ghost sm">Sign out</button>
   </div></header>
 
-  <main>
+  <main id="main">
+    <div id="connection-error" class="denied" role="status" hidden></div>
     <div class="page-head">
       <div>
-        <h1>Overview</h1>
-        <p>Requests use the first available provider account, switching to the next if its quota is exhausted.</p>
+        <span class="eyebrow">DASHBOARD</span>
+        <h1>Your AI workspace</h1>
+        <p>Connect your accounts and manage access. Start here.</p>
       </div>
     </div>
 
-    <section class="kpis" id="kpis"></section>
+    <section class="welcome-card" aria-labelledby="welcome-title">
+      <div class="welcome-heading"><div><span class="eyebrow">GETTING STARTED</span><h2 id="welcome-title">From setup to your first request</h2><p>One provider account and one key are enough. No other service to install.</p></div><span class="progress-label" id="setup-progress"></span></div>
+      <div class="onboarding" id="onboarding"></div>
+    </section>
+    <section class="kpis" id="kpis" aria-label="Gateway activity"></section>
+    <p class="stats-note">Requests and tokens since the last server start.</p>
 
-    <div class="section-title"><h2>Subscription accounts</h2><p>Priority runs from top to bottom; use the arrows to change it.</p></div>
+    <div class="section-title" id="accounts-section"><h2>01 <span>Provider accounts</span></h2><p id="routing-help">Add the account you want to use, then test its connection.</p></div>
     <section class="providers">
       <div class="provider claude">
         <div class="provider-head">
@@ -76,37 +109,58 @@
       </div>
     </section>
 
-    <div class="section-title"><h2>API keys</h2><p>One key per client, compatible with OpenAI SDKs.</p></div>
+    <div class="section-title" id="keys-section"><h2>02 <span>API keys</span></h2><p>A key gives an application access to the gateway.</p></div>
     <section class="card">
       <form class="keys-form" id="key-form">
+        <label class="sr-only" for="key-name">Name of the application that will use this key</label>
         <input class="input" id="key-name" placeholder="Key name: open-webui, raycast, script…" required maxlength="60">
         <button class="btn primary"><svg class="i"><use href="#i-key"/></svg>Create a key</button>
       </form>
-      <div id="reveal" class="reveal" hidden>
+      <div id="reveal" class="reveal" tabindex="-1" hidden>
         <h4>New key: <span id="reveal-name"></span> — copy it now; it will not be shown again.</h4>
         <div class="secret"><code id="reveal-key"></code><button class="btn sm" id="copy-key"><svg class="i"><use href="#i-copy"/></svg>Copy</button></div>
-        <div class="tabs" id="snip-tabs"><button data-t="python" class="on">Python</button><button data-t="curl">curl</button><button data-t="owui">Open WebUI</button></div>
+        <div class="snippet-head"><span>Example using the model selected below</span><button id="copy-snippet" class="btn sm">Copy example</button><button id="hide-key" class="btn ghost sm">Hide key</button></div>
+        <div class="tabs" id="snip-tabs"><button data-t="python" class="on" aria-pressed="true">Python</button><button data-t="curl" aria-pressed="false">curl</button><button data-t="owui" aria-pressed="false">Open WebUI</button></div>
         <pre class="code" id="snip"></pre>
       </div>
       <div id="keys"></div>
     </section>
 
-    <div class="foot">
-      <span>Base URL: <code id="base-url"></code></span>
-      <a href="/docs" target="_blank">API documentation</a>
-    </div>
+    <div class="section-title" id="connect-section"><h2>03 <span>Connect your application</span></h2><p>Choose an OpenAI-compatible connection in your application.</p></div>
+    <section class="connection-card card">
+      <div><h3>Three settings and you are ready.</h3><p>Copy the URL, the key created above and the exact model name. The name includes the account to use.</p><span class="pill ok">OpenAI-compatible API</span></div>
+      <div class="connection-fields">
+        <div class="field"><label for="connection-url">API address (Base URL)</label><div class="copy-field"><input id="connection-url" class="input mono" readonly><button id="copy-url" class="btn" type="button" aria-label="Copy API address">Copy</button></div></div>
+        <div class="field"><label for="model-select">Model to use</label><div class="copy-field"><select id="model-select" class="input"></select><button id="copy-model" class="btn" type="button" aria-label="Copy model name">Copy</button></div></div>
+        <p class="hint" id="model-help">Add an account to see its models.</p>
+        <p class="hint">API key: use a <code>sk-cr-…</code> key, not your login password.</p>
+      </div>
+    </section>
+
+    <section id="guide" class="guide" aria-labelledby="guide-title">
+      <div class="section-title"><h2 id="guide-title">Quick guide</h2><p>Answers to your first questions.</p></div>
+      <div class="guide-grid">
+        <details><summary>Account, model, key: what is the difference?</summary><p>The <strong>provider account</strong> is your Claude, ChatGPT or Google subscription. The <strong>model</strong> is the AI you ask a question. The <strong>API key</strong> lets your application access this gateway.</p><p>Your username and password are only used to administer this console.</p></details>
+        <details id="guide-account"><summary>How do I connect my first account?</summary><p>Under Provider accounts, click <strong>Add</strong>. Claude uses a token generated by <code>claude setup-token</code>. ChatGPT uses a code you enter in your browser. Google requires sign-in from the server terminal.</p><p>Then click <strong>Test</strong>: a small real request checks that the account responds and uses a little of its quota.</p></details>
+        <details><summary>Do I need LiteLLM?</summary><p><strong>No. PocketRelay works on its own</strong>: accounts, API keys and model access are already included.</p><p>For many keys or budgets within authorized use, you can place <strong>LiteLLM in front of PocketRelay</strong>. LiteLLM manages user keys and calls the gateway with a dedicated key. Your applications then connect to LiteLLM. Provider terms still apply.</p><p>Keys created here do not restrict access to a particular model or account.</p></details>
+        <details id="guide-connection"><summary>My application cannot connect</summary><p>Check the URL ending in <code>/v1</code>, an active key and the full <code>account/model</code> identifier. A bare <code>sonnet</code> is rejected by default.</p><p>From another container on the same Compose network: <code>http://customremote:8787/v1</code>. From another machine, use your server's HTTPS address; <code>localhost</code> always means the application host.</p></details>
+        <details><summary>I lost a key or reached my quota</summary><p>A key is shown only when created. If you lose it, create a new one and revoke the old one. If it was shared accidentally, revoke it immediately.</p><p>Quotas come from the provider: creating a new key does not increase them. With an account-specific model, the gateway does not switch to another account.</p></details>
+        <details id="guide-data"><summary>Where does my data go?</summary><p>Your requests go to the selected model's provider. Gateway accounts, sign-in data and keys are stored in the Docker volume at <code>/data</code>.</p><p>Keep this volume when updating and back it up. Stopping the container does not delete your accounts.</p></details>
+      </div>
+    </section>
+    <div class="foot"><span>PocketRelay · Your gateway, your accounts.</span><span>Base URL: <code id="base-url"></code></span><a id="api-docs" href="/docs" target="_blank" rel="noopener">API reference ↗</a></div>
   </main>
 </div>
 
 <!-- ============ add account ============ -->
-<dialog id="dlg-add">
+<dialog id="dlg-add" aria-labelledby="add-title">
   <div class="dlg-head"><div><h3 id="add-title">Add an account</h3><p id="add-sub">Each account has its own quotas.</p></div></div>
   <div class="dlg-body" id="add-body"></div>
   <div class="dlg-foot" id="add-foot"></div>
 </dialog>
 
 <!-- ============ simple input (rename, replace token) ============ -->
-<dialog id="dlg-prompt">
+<dialog id="dlg-prompt" aria-labelledby="pr-title">
   <form method="dialog">
     <div class="dlg-head"><div><h3 id="pr-title"></h3><p id="pr-sub"></p></div></div>
     <div class="dlg-body"><input class="input" id="pr-input" required></div>
@@ -114,7 +168,7 @@
   </form>
 </dialog>
 
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite"></div>
 
 <svg width="0" height="0" style="position:absolute">
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -135,6 +189,6 @@
   <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
 </svg>
-<script src="/static/admin.js"></script>
+<script type="module" src="/static/admin.js"></script>
 </body>
 </html>

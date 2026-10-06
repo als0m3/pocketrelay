@@ -111,7 +111,7 @@ function renderSidebar() {
   const total = [...S.sessions.values()].reduce((a, s) => a + (s.cost_usd || 0), 0);
   $("#usage").textContent = `≈ $${total.toFixed(2)} API equivalent`;
   const waiting = [...S.sessions.values()].filter(s => s.pending?.length).length;
-  document.title = (waiting ? `(${waiting}) ` : "") + "CustomRemote";
+  document.title = (waiting ? `(${waiting}) ` : "") + "PocketRelay";
 }
 
 function onSessionUpdate(s) {
@@ -377,8 +377,13 @@ function renderStreamEvent(ev) {
         append(S.draft);
       }
       S.draft._text += d.text;
-      S.draft.innerHTML = md(S.draft._text);
-      keepBottom();
+      const draft = S.draft;
+      if (!draft._frame) draft._frame = requestAnimationFrame(() => {
+        draft._frame = null;
+        if (S.draft !== draft || !draft.isConnected) return;
+        draft.innerHTML = md(draft._text);
+        keepBottom();
+      });
     } else if (d.type === "thinking_delta") {
       if (d.thinking) S.liveThinking = (S.liveThinking || 0) + d.thinking.length;
       setLive(`Thinking…${d.estimated_tokens ? `  ~${d.estimated_tokens} tokens` : ""}`);
@@ -681,7 +686,7 @@ $("#m-copy").onclick = () => {
 };
 $("#m-stop").onclick = async () => { await api(`/api/sessions/${S.current}/stop`, { method: "POST" }); $("#dlg-more").close(); };
 $("#m-delete").onclick = async () => {
-  if (!confirm("Delete this CustomRemote session? The CLI transcript remains in ~/.claude.")) return;
+  if (!confirm("Delete this session from PocketRelay? (The CLI transcript stays in ~/.claude.)")) return;
   await api(`/api/sessions/${S.current}`, { method: "DELETE" });
   $("#dlg-more").close();
 };

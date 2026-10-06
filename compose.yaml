@@ -1,0 +1,27 @@
+services:
+  customremote:
+    build: .
+    # The CLIs bundled by the Dockerfile target Linux x86_64.
+    platform: linux/amd64
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8787}:8787"
+    environment:
+      REMOTE_ENABLE_SESSIONS: "0"
+      REMOTE_SYSTEM_ACCOUNTS: ""
+      REMOTE_V1_ALLOW_MASTER: "0"
+      REMOTE_ALLOWED_HOSTS: "customremote,${REMOTE_ALLOWED_HOSTS:-localhost}"
+      REMOTE_PUBLIC_URL: "${REMOTE_PUBLIC_URL:-}"
+      REMOTE_HTTPS: "${REMOTE_HTTPS:-0}"
+    volumes:
+      - remote-data:/data
+    healthcheck:
+      test: ["CMD", "customremote", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  remote-data:

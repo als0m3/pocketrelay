@@ -1,5 +1,22 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+/data/
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+# Generated builds and local tools
+/target/
+/dist/
 .venv/
 __pycache__/
-data/
-deploy/okd/params.env
-deploy/okd/secrets.env
+*.pyc
+*.log
+.DS_Store
+.idea/
+.vscode/
+compose.override.yaml
+compose.override.yml

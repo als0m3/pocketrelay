@@ -1,0 +1,16 @@
+PocketRelay for macOS
+
+1. Drag PocketRelay to Applications.
+2. Open PocketRelay and choose your username and password.
+3. Connect a provider account, create a key and copy the settings into your application.
+
+No Docker, Homebrew, Python or Node.js required.
+API: http://localhost:8788/v1
+Closing the window keeps the service running in the menu bar.
+"Quit and stop the API" stops the service.
+Launch at login is optional and available in the app menu.
+
+This local build is not notarized by Apple. macOS may block it from opening.
+This repository does not provide a Developer ID or App Store package.
+
+Docker remains available separately, with its own accounts and keys on port 8787.

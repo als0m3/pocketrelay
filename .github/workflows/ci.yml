@@ -1,0 +1,45 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Scan the full history for secrets
+        run: |
+          curl -fsSL --retry 3 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz' | sha256sum -c -
+          mkdir -p /tmp/pocketrelay-tools
+          tar xzf /tmp/gitleaks.tar.gz -C /tmp/pocketrelay-tools gitleaks
+          /tmp/pocketrelay-tools/gitleaks git --redact=100 --no-banner --log-opts='--all' .
+      - name: Install Rust
+        run: rustup toolchain install 1.97 --profile minimal --component rustfmt,clippy && rustup default 1.97
+      - name: Install Poppler for PDF tests
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - run: python3 tests/integration.py
+      - run: python3 tests/oidc.py
+      - run: python3 tests/desktop.py
+      - name: Check JavaScript syntax
+        run: node --check static/admin.js && node --check static/admin-view.js && node --check static/app.js
+
+  macos-shell:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Typecheck the native app
+        run: xcrun swiftc -swift-version 5 -warnings-as-errors -target "$(uname -m)-apple-macosx14.0" -framework AppKit -framework WebKit -framework ServiceManagement -typecheck macos/Sources/main.swift
+      - name: Typecheck native PDF support
+        run: xcrun swiftc -swift-version 5 -warnings-as-errors -typecheck -framework PDFKit -framework AppKit macos/Sources/PDFTool.swift
+      - name: Check scripts and metadata
+        run: |
+          bash -n macos/build.sh macos/notarize.sh
+          python3 -m py_compile macos/scripts/bundle.py macos/scripts/verify.py macos/scripts/test-dmg.py tests/desktop.py
+          plutil -lint macos/Info.plist macos/cli-entitlements.plist

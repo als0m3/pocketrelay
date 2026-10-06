@@ -1,6 +1,10 @@
-.venv
-data
-__pycache__
-*.pyc
-.git
-deploy
+# Only inputs needed by the Dockerfile enter the build context.
+**
+!Cargo.toml
+!Cargo.lock
+!src/
+!src/**
+!static/
+!static/**
+!Dockerfile
+!LICENSE

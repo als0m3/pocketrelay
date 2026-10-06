@@ -1,4 +1,13 @@
+import { changed, reconcile, cachedNode } from "./admin-view.js";
 "use strict";
+const desktop = window.webkit?.messageHandlers?.customremote;
+const nativeAction = (action, extra = {}) => desktop?.postMessage({ action, ...extra });
+if (desktop) {
+  document.querySelector(".login-help").replaceChildren(
+    Object.assign(document.createElement("summary"), { textContent: "Forgot your password?" }),
+    Object.assign(document.createElement("button"), { className: "btn", textContent: "Change password on this Mac", onclick: () => nativeAction("resetPassword") })
+  );
+}
 
 // ---------- utilities ----------
 const $ = s => document.querySelector(s);
@@ -14,9 +23,19 @@ const h = (tag, attrs = {}, ...kids) => {
   for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
   return el;
 };
+if (desktop) {
+  $("#guide-account p").textContent = "Click Add. ChatGPT provides a code to enter in your browser. For Claude and Google, the sign-in button opens the setup assistant in Terminal automatically, with no commands to type.";
+  const dataHelp = $("#guide-data").querySelectorAll("p");
+  dataHelp[0].textContent = "Requests are sent to the selected provider. Your accounts and keys stay on this Mac, in Library → Application Support → PocketRelay. Open this folder from the app menu.";
+  dataHelp[1].textContent = "Quit the app before backing up this folder. Replacing the app during an update preserves your accounts. Docker has its own separate data.";
+  $("#guide-connection").querySelectorAll("p")[1].textContent = "The API is available on this Mac while PocketRelay is open and the Mac is awake. Copy the address shown above. The app uses port 8788; Docker uses port 8787 by default.";
+  $(".guide-grid").append(h("details", {}, h("summary", {}, "Does closing the window stop the API?"),
+    h("p", {}, "No. The service keeps running in the menu bar. Choose Quit and stop the API to stop it. You can also enable Launch at login from that menu.")));
+}
 const icon = (name, cls = "i") => {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   s.setAttribute("class", cls);
+  s.setAttribute("aria-hidden", "true");
   const u = document.createElementNS("http://www.w3.org/2000/svg", "use");
   u.setAttribute("href", `#i-${name}`);
   s.append(u);
@@ -38,22 +57,36 @@ function toast(msg, bad = false) {
   $("#toasts").append(t);
   setTimeout(() => t.remove(), bad ? 5000 : 2600);
 }
-const copy = (text, what = "Copied") => navigator.clipboard.writeText(text).then(() => toast(what));
+async function copy(text, what = "Copied") {
+  try {
+    if (desktop) nativeAction("copy", { text: String(text) });
+    else await navigator.clipboard.writeText(text);
+    toast(what);
+  } catch {
+    toast("Automatic copying is unavailable: select the text and copy it manually.", true);
+  }
+}
 
 async function call(path, method = "GET", body) {
   const r = await fetch(path, {
     method, credentials: "same-origin",
+    signal: AbortSignal.timeout(path.includes("/test") || method !== "GET" ? 620000 : 30000),
     headers: { "X-Admin": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const d = await r.json().catch(() => ({}));
-  if (r.status === 401 && path !== "/admin/auth/token") { showLogin(); throw new Error("Session expired"); }
-  if (!r.ok) throw new Error(d.detail || r.statusText);
+  if (r.status === 401 && !path.startsWith("/admin/auth/")) { await showLogin(); }
+  if (!r.ok) {
+    const message = r.status === 422 ? "Check the values you entered." : (typeof d.detail === "string" ? d.detail : r.statusText);
+    throw Object.assign(new Error(message), { status: r.status });
+  }
   return d;
 }
 
 let S = null;          // last received state
 let pollTimer = null;
+let generation = 0;
+const accountNodes = new Map();
 
 // ---------- theme ----------
 function applyTheme(t) { if (t) document.documentElement.dataset.theme = t; }
@@ -66,25 +99,65 @@ $("#theme").onclick = () => {
 };
 
 // ---------- connection ----------
+function forgetKey() {
+  lastKey = null;
+  $("#reveal").hidden = true;
+  $("#reveal-key").textContent = "";
+  $("#snip").textContent = "";
+}
+
 async function showLogin() {
-  clearInterval(pollTimer);
+  generation++;
+  clearTimeout(pollTimer);
+  clearInterval(loginPoll);
+  accountNodes.clear();
+  forgetKey();
+  S = null;
   $("#console").hidden = true;
+  document.querySelectorAll("dialog[open]").forEach(d => d.close());
+  $("#loading").hidden = true;
   $("#login").hidden = false;
-  const cfg = await fetch("/admin/auth/config").then(r => r.json()).catch(() => ({}));
-  $("#oidc-btn").hidden = !cfg.oidc;
-  $("#or").hidden = !cfg.oidc || cfg.token_login === false;
-  $("#master").closest("label").hidden = cfg.token_login === false;
-  $("#master-btn").hidden = cfg.token_login === false;
-  const denied = new URLSearchParams(location.search).get("denied");
-  if (denied) { $("#denied").hidden = false; $("#denied").textContent = `Access denied for ${denied}: this account is not an administrator.`; }
+  try {
+    const cfg = await call("/admin/auth/config");
+    $("#oidc-btn").hidden = !cfg.oidc;
+    $("#or").hidden = !cfg.oidc || !cfg.password_login;
+    $("#password-form").hidden = !cfg.password_login;
+    $("#token-help").hidden = !cfg.token_login;
+    $("#setup-help").hidden = !cfg.setup_needed;
+    $("#denied").hidden = true;
+    const denied = new URLSearchParams(location.search).get("denied");
+    if (denied) loginError(`Access denied for ${denied}: this account is not an administrator.`);
+    if (cfg.password_login) $("#username").focus();
+  } catch { loginError("Cannot reach the server. Refresh the page to try again."); }
+}
+function loginError(message) {
+  $("#denied").textContent = message;
+  $("#denied").hidden = false;
 }
 $("#oidc-btn").onclick = () => (location.href = "/admin/auth/login");
-$("#master-btn").onclick = async () => {
-  try { await call("/admin/auth/token", "POST", { token: $("#master").value }); $("#master").value = ""; start(); }
-  catch (e) { toast(e.message, true); }
+$("#show-password").onchange = e => { $("#password").type = e.target.checked ? "text" : "password"; };
+async function submitLogin(event, path, body, button) {
+  event.preventDefault();
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = "Signing in…";
+  $("#denied").hidden = true;
+  try {
+    await call(path, "POST", body);
+    $("#password").value = "";
+    $("#master").value = "";
+    $("#show-password").checked = false;
+    $("#password").type = "password";
+    await start();
+  } catch (e) { loginError(e.message); }
+  finally { button.disabled = false; button.textContent = original; }
+}
+$("#password-form").onsubmit = e => submitLogin(e, "/admin/auth/password", { username: $("#username").value.trim(), password: $("#password").value }, $("#password-btn"));
+$("#token-form").onsubmit = e => submitLogin(e, "/admin/auth/token", { token: $("#master").value }, $("#master-btn"));
+$("#logout").onclick = async () => {
+  try { await call("/admin/auth/logout", "POST"); await showLogin(); }
+  catch (e) { toast("Could not sign out: " + e.message, true); }
 };
-$("#master").onkeydown = e => { if (e.key === "Enter") $("#master-btn").click(); };
-$("#logout").onclick = async () => { await call("/admin/auth/logout", "POST").catch(() => {}); showLogin(); };
 
 // ---------- rendering ----------
 function render() {
@@ -100,19 +173,26 @@ function render() {
   $("#antigravity-col").hidden = !s.antigravity_enabled;
   if (s.antigravity_enabled) renderAccounts("antigravity");
   renderKeys();
+  renderOnboarding();
+  renderConnection();
+  $("#api-docs").hidden = !s.docs_enabled;
+  $("#routing-help").textContent = s.require_account
+    ? "Each model targets a specific account. Add an account, then test its connection."
+    : "Models without an account use priority order. Account/model identifiers stay tied to that account.";
 }
 
 function renderKpis() {
+  if (!changed($("#kpis"), [S.stats, Object.values(S.accounts).flat().map(a => [a.id, a.enabled, a.status]), S.keys.map(k => [k.id, k.revoked])])) return;
   const all = [...S.accounts.claude, ...(S.codex_enabled ? S.accounts.codex : []),
                ...(S.antigravity_enabled ? S.accounts.antigravity : [])];
-  const ready = all.filter(a => a.status === "ok" || a.status === "unknown").length;
+  const ready = all.filter(a => a.enabled && a.status === "ok").length;
   const activeKeys = S.keys.filter(k => !k.revoked).length;
   const kpi = (ic, lbl, val, sub) => h("div", { class: "kpi" },
     h("div", { class: "lbl" }, icon(ic), lbl), h("div", { class: "val" }, val, sub ? h("small", {}, " " + sub) : null));
   $("#kpis").replaceChildren(
     kpi("bolt", "Requests", num(S.stats.requests), S.stats.errors ? `· ${S.stats.errors} errors` : ""),
     kpi("chart", "Generated tokens", num(S.stats.output_tokens)),
-    kpi("users", "Available accounts", ready, `/ ${all.length}`),
+    kpi("users", "Accounts tested / used", ready, `/ ${all.length}`),
     kpi("key", "Active keys", activeKeys, `/ ${S.keys.length}`),
   );
 }
@@ -163,17 +243,25 @@ function renderAccounts(provider) {
   const list = S.accounts[provider];
   const box = $(`#acc-${provider}`);
   if (!list.length) {
-    box.replaceChildren(h("div", { class: "empty-accounts" }, "No accounts yet."));
+    if (!changed(box, [])) return;
+    accountNodes.delete(provider);
+    const hints = { claude: "Connect your subscription with a Claude token.", codex: "Enter a code in your browser to connect ChatGPT.", antigravity: desktop ? "The app guides you through connecting Google." : "Connect Google from the server terminal." };
+    box.replaceChildren(h("div", { class: "empty-accounts" }, h("strong", {}, "Your first account starts here"),
+      h("p", {}, hints[provider]), h("button", { class: "btn", onclick: () => openAdd(provider) }, "Connect an account")));
     return;
   }
-  box.replaceChildren(...list.map((a, i) => {
+  changed(box, list.map(a => a.id));
+  let cache = accountNodes.get(provider);
+  if (!cache) accountNodes.set(provider, cache = new Map());
+  for (const id of cache.keys()) if (!list.some(a => a.id === id)) cache.delete(id);
+  reconcile(box, list.map((a, i) => cachedNode(cache, a.id, [a, i, list.length, S.models[provider], Math.floor(Date.now() / 60000)], () => {
     const [cls, label] = STATUS[a.status] || ["unknown", a.status];
     const pill = h("span", { class: `pill ${cls}` }, a.status === "paused" && a.paused_until ? `${label} · resumes ${fmtTime(a.paused_until)}` : label);
     const toggle = h("label", { class: "switch", title: a.enabled ? "Disable" : "Enable" },
-      h("input", { type: "checkbox", checked: a.enabled, onchange: e => act(() => call(`/admin/api/accounts/${a.id}`, "PATCH", { enabled: e.target.checked })) }),
+      h("input", { type: "checkbox", "aria-label": `Enable account ${a.label}`, checked: a.enabled, onchange: e => act(() => call(`/admin/api/accounts/${a.id}`, "PATCH", { enabled: e.target.checked })) }),
       h("span"));
     const notes = [];
-    if (a.status === "paused") notes.push(h("div", { class: "acc-note warn" }, `Paused (${a.pause_reason || "quota"}): requests use the next account.`));
+    if (a.status === "paused") notes.push(h("div", { class: "acc-note warn" }, `Paused (${a.pause_reason || "quota"}). Try again after it resumes or choose another account.`));
     else if (a.last_error && a.enabled) notes.push(h("div", { class: "acc-note bad" }, a.last_error.message));
     const needsLogin = a.enabled && a.provider === "codex" && !a.identity;
     return h("div", { class: `acc ${a.enabled ? "" : "disabled"}` },
@@ -195,7 +283,7 @@ function renderAccounts(provider) {
         h("button", { class: "btn ghost icon", title: "Move up", disabled: i === 0, onclick: () => act(() => call(`/admin/api/accounts/${a.id}/move`, "POST", { delta: -1 })) }, icon("up")),
         h("button", { class: "btn ghost icon", title: "Move down", disabled: i === list.length - 1, onclick: () => act(() => call(`/admin/api/accounts/${a.id}/move`, "POST", { delta: 1 })) }, icon("down")),
         h("button", { class: "btn ghost icon", title: "More", onclick: e => accountMenu(a, e.currentTarget) }, icon("dots"))));
-  }));
+  })));
 }
 
 // Names targeting this account: <account>/<model>, prefixed with openai/ for LiteLLM.
@@ -207,14 +295,21 @@ function accModels(a) {
     return h("div", { class: "acc-model" },
       h("span", { class: "mname" }, m.name),
       h("code", { class: "mono" }, name),
-      h("button", { class: "btn ghost icon", title: `Copy for LiteLLM: openai/${name}`,
-        onclick: () => copy(`openai/${name}`, "LiteLLM name copied") }, icon("copy")));
+      h("button", { class: "btn ghost icon", title: `Copy model: ${name}`,
+        onclick: () => copy(name, "Model name copied") }, icon("copy")));
   };
-  return h("details", { class: "acc-models" },
+  const details = h("details", { class: "acc-models", "data-account": a.id },
     h("summary", {}, `Models for this account (${list.length})`),
-    h("p", { class: "hint" }, "Use this name to select the account without failover. The button copies the LiteLLM form (",
-      h("code", {}, "openai/…"), "); other clients use the name directly."),
-    ...list.map(row));
+    h("p", { class: "hint" }, "Copy this name into your application. For LiteLLM, add the prefix ",
+      h("code", {}, "openai/"), "."),
+    h("div", { class: "model-rows" }));
+  details.addEventListener("toggle", () => {
+    if (details.open && !details.dataset.loaded) {
+      details.querySelector(".model-rows").replaceChildren(...list.map(row));
+      details.dataset.loaded = "1";
+    }
+  });
+  return details;
 }
 
 async function act(fn, okMsg) {
@@ -308,7 +403,7 @@ function segmented() {
 
 function renderAddForm() {
   $("#add-title").textContent = "Add an account";
-  $("#add-sub").textContent = "Each account has its own quotas; the order defines priority.";
+  $("#add-sub").textContent = "Connect a subscription, then use the models linked to that account.";
   const name = h("input", { class: "input", placeholder: addProvider === "claude" ? "ex. Perso, Pro…" : "ex. ChatGPT perso", maxlength: 40 });
   const cancel = h("button", { class: "btn ghost", onclick: () => $("#dlg-add").close() }, "Cancel");
   if (addProvider === "claude") {
@@ -325,8 +420,10 @@ function renderAddForm() {
     } }, "Add");
     $("#add-body").replaceChildren(segmented(),
       h("ol", { class: "steps" },
-        h("li", {}, "On a machine signed into this account, generate a long-lived token:",
-          h("div", { class: "cmd" }, h("code", {}, "claude setup-token"), h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy("claude setup-token") }, icon("copy")))),
+        h("li", {}, desktop ? "Open the Claude setup assistant, then sign in through your browser:" : "Generate a token from a terminal in the project directory:",
+          desktop ? h("button", { class: "btn", type: "button", onclick: () => nativeAction("claudeToken") }, "Connect Claude on this Mac") :
+          h("div", { class: "cmd" }, h("code", {}, "docker compose exec customremote claude setup-token"), h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy("docker compose exec customremote claude setup-token") }, icon("copy"))),
+          h("p", { class: "hint" }, desktop ? "Terminal opens automatically. Copy the generated token and paste it below." : "Without Docker, on a machine with the CLI installed: claude setup-token.")),
         h("li", {}, "Paste the displayed token (it starts with sk-ant-):")),
       h("label", { class: "field" }, h("span", {}, "Token"), tok),
       h("label", { class: "field" }, h("span", {}, "Account name"), name),
@@ -344,7 +441,7 @@ function renderAddForm() {
     $("#add-body").replaceChildren(segmented(),
       h("ol", { class: "steps" },
         h("li", {}, "Name the account: it gets its own state directory on the server."),
-        h("li", {}, "Google CLI login requires a terminal: the server will provide the command to run."),
+        h("li", {}, desktop ? "The app will open Google setup in Terminal, with no commands to type." : "Google CLI login requires a terminal: the server will provide the command to run."),
         h("li", {}, "The CLI displays a URL. Approve sign-in in your browser, then paste the code back.")),
       h("label", { class: "field" }, h("span", {}, "Account name"), name));
     $("#add-foot").replaceChildren(cancel, submit);
@@ -380,8 +477,13 @@ function deviceStep(account, login) {
   $("#add-foot").replaceChildren(h("button", { class: "btn ghost", onclick: () => $("#dlg-add").close() }, "Finish later"));
   const t0 = Date.now();
   clearInterval(loginPoll);
+  let checking = false;
   loginPoll = setInterval(async () => {
-    const s = await call("/admin/api/state").catch(() => null);
+    if (checking || document.hidden) return;
+    checking = true;
+    const s = await call("/admin/api/catalog?refresh=1").catch(() => null);
+    checking = false;
+    if (!$("#dlg-add").open || !S) return;
     const acc = s?.accounts.codex.find(a => a.id === account.id);
     if (acc?.identity) {
       clearInterval(loginPoll);
@@ -395,13 +497,24 @@ function deviceStep(account, login) {
 }
 
 function commandStep(account, command) {
+  if (desktop) {
+    $("#add-title").textContent = `Connect ${account.label}`;
+    $("#add-sub").textContent = "Google setup opens in Terminal on your Mac.";
+    $("#add-body").replaceChildren(
+      h("p", {}, "Click below, follow the sign-in link, then return here. No commands to copy."),
+      h("button", { class: "btn primary", onclick: () => nativeAction("googleLogin", { account: account.id }) }, "Connect Google on this Mac"),
+      h("p", { class: "hint" }, "Once signed in, use Test on the account card."));
+    $("#add-foot").replaceChildren(h("button", { class: "btn", onclick: () => $("#dlg-add").close() }, "Done"));
+    return;
+  }
   $("#add-title").textContent = `Connect ${account.label}`;
   $("#add-sub").textContent = "Run in a server terminal; the CLI displays a URL and waits for the code.";
   $("#add-body").replaceChildren(
     h("div", { class: "cmd" }, h("code", {}, command),
       h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy(command) }, icon("copy"))),
-    h("p", { style: "color:var(--text-2)" }, "On the cluster: oc -n custom-remote exec -it deploy/claude-api -- ",
-      h("code", {}, command), " — -it is required; CLI login needs a terminal."),
+    h("p", { class: "hint" }, "With Docker Compose, run this command from the project directory:"),
+    h("div", { class: "cmd" }, h("code", {}, `docker compose exec customremote ${command}`),
+      h("button", { class: "btn ghost icon", title: "Copy Docker command", onclick: () => copy(`docker compose exec customremote ${command}`) }, icon("copy"))),
     h("p", { style: "color:var(--text-2)" }, "Once signed in, return here and select Test."));
   $("#add-foot").replaceChildren(h("button", { class: "btn primary", onclick: () => $("#dlg-add").close() }, "Done"));
 }
@@ -431,6 +544,7 @@ function success(title, sub) {
 // ---------- keys ----------
 function renderKeys() {
   const box = $("#keys");
+  if (!changed(box, [S.keys, Math.floor(Date.now() / 60000)])) return;
   if (!S.keys.length) return box.replaceChildren(h("div", { class: "keys-empty" }, "No keys yet. Create one for each client application."));
   const head = h("div", { class: "key-row head" }, h("span", {}, "Name"), h("span", {}, "Key"), h("span", {}, "Created"), h("span", {}, "Last used"), h("span", {}, "Req."), h("span"));
   box.replaceChildren(head, ...S.keys.slice().reverse().map(k => h("div", { class: `key-row ${k.revoked ? "revoked" : ""}` },
@@ -445,23 +559,31 @@ function renderKeys() {
 }
 
 let lastKey = null, snipTab = "python";
+function selectedModel() { return $("#model-select").value || "your-account/model"; }
+const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 function snippet() {
-  const base = `${location.origin}/v1`, k = lastKey?.key || "";
+  const base = `${location.origin}/v1`, k = lastKey?.key || "YOUR_KEY", model = selectedModel();
+  const payload = JSON.stringify({ model, messages: [{ role: "user", content: "Hello!" }] });
   return {
-    python: `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key="${k}")\nr = client.chat.completions.create(\n    model="sonnet",  # or gpt-5.6-sol, haiku…\n    messages=[{"role": "user", "content": "Hello!"}],\n)\nprint(r.choices[0].message.content)`,
-    curl: `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer ${k}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "sonnet", "messages": [{"role": "user", "content": "Hello!"}]}'`,
-    owui: `Admin settings → Connections → OpenAI API\n  URL: ${base}\n  Key: ${k}`,
+    python: `from openai import OpenAI\n\nclient = OpenAI(base_url=${JSON.stringify(base)}, api_key=${JSON.stringify(k)})\nr = client.chat.completions.create(\n    model=${JSON.stringify(model)},\n    messages=[{"role": "user", "content": "Hello!"}],\n)\nprint(r.choices[0].message.content)`,
+    curl: `curl ${shellQuote(base + "/chat/completions")} \\\n  -H ${shellQuote("Authorization: Bearer " + k)} \\\n  -H 'Content-Type: application/json' \\\n  -d ${shellQuote(payload)}`,
+    owui: `Admin settings → Connections → OpenAI API\n  URL: ${base}\n  Key: ${k}\n  Model: ${model}\n\nIn a container on the same Compose network:\n  URL: http://customremote:8787/v1`,
   }[snipTab];
 }
 $("#snip-tabs").onclick = e => {
   const t = e.target.dataset.t;
   if (!t) return;
   snipTab = t;
-  document.querySelectorAll("#snip-tabs button").forEach(b => b.classList.toggle("on", b.dataset.t === t));
+  document.querySelectorAll("#snip-tabs button").forEach(b => {
+    b.classList.toggle("on", b.dataset.t === t);
+    b.setAttribute("aria-pressed", String(b.dataset.t === t));
+  });
   $("#snip").textContent = snippet();
 };
 $("#key-form").onsubmit = async e => {
   e.preventDefault();
+  const button = e.currentTarget.querySelector("button");
+  button.disabled = true;
   try {
     const r = await call("/admin/api/keys", "POST", { name: $("#key-name").value });
     lastKey = { key: r.key, name: r.item.name };
@@ -470,23 +592,122 @@ $("#key-form").onsubmit = async e => {
     $("#reveal-name").textContent = r.item.name;
     $("#reveal-key").textContent = r.key;
     $("#snip").textContent = snippet();
+    $("#reveal").focus();
     refresh();
   } catch (err) { toast(err.message, true); }
+  finally { button.disabled = false; }
 };
 $("#copy-key").onclick = () => copy(lastKey?.key || "", "Key copied");
 
-// ---------- cycle ----------
-async function refresh() {
-  try { S = await call("/admin/api/state"); } catch { return; }
-  render();
+$("#copy-snippet").onclick = () => copy(snippet(), "Example copied");
+$("#hide-key").onclick = () => { forgetKey(); $("#key-name").focus(); };
+$("#copy-url").onclick = () => copy($("#connection-url").value, "Address copied");
+$("#copy-model").onclick = () => copy(selectedModel(), "Model copied");
+$("#model-select").onchange = () => {
+  $("#model-help").textContent = `Exact name: ${selectedModel()}. Test the account to check availability.`;
+  if (lastKey) $("#snip").textContent = snippet();
+};
+
+function renderOnboarding() {
+  if (!changed($("#onboarding"), [Object.values(S.accounts).flat().map(a => [a.enabled, a.status, Boolean(a.identity)]), S.keys.map(k => [k.revoked, k.requests > 0])])) return;
+  const all = Object.values(S.accounts).flat();
+  const added = all.some(a => a.enabled && (a.status === "ok" || a.identity));
+  const hasAccount = all.some(a => a.enabled);
+  const key = S.keys.some(k => !k.revoked);
+  const used = S.keys.some(k => k.requests > 0);
+  const steps = [
+    { done: added, title: "Connect an account", text: "Claude, ChatGPT or Google: one is enough.", action: added ? "Manage accounts" : hasAccount ? "Test my account" : "Choose a provider", target: "accounts-section" },
+    { done: key, title: "Create an API key", text: "A dedicated key for each application.", action: key ? "Manage keys" : "Create my first key", target: "keys-section" },
+    { done: used, title: "Connect an application", text: "Copy the settings into your application.", action: "View settings", target: "connect-section" },
+  ];
+  $("#setup-progress").textContent = `${steps.filter(s => s.done).length} / 3 steps completed`;
+  $("#onboarding").replaceChildren(...steps.map((s, i) => h("a", { class: `onboarding-step ${s.done ? "done" : ""}`, href: `#${s.target}` },
+    h("span", { class: "step-number", "aria-label": s.done ? "Step completed" : `Step ${i + 1}` }, s.done ? icon("check") : i + 1),
+    h("div", {}, h("strong", {}, s.title), h("p", {}, s.text), h("span", { class: "step-action" }, s.action + " →")))));
 }
+function renderConnection() {
+  $("#connection-url").value = `${location.origin}/v1`;
+  const select = $("#model-select"), previous = select.value;
+  const choices = Object.entries(S.accounts).flatMap(([provider, list]) => list.filter(a => a.enabled).flatMap(a =>
+    (S.models[provider] || []).map(m => ({ id: `${a.slug || a.id}/${m.id}`, name: `${a.label} · ${m.name}` }))));
+  if (!changed(select, choices)) return;
+  select.replaceChildren(...(choices.length ? choices.map(m => h("option", { value: m.id }, m.name)) : [h("option", { value: "" }, "Add an account first")]));
+  if (choices.some(m => m.id === previous)) select.value = previous;
+  select.disabled = !choices.length;
+  $("#copy-model").disabled = !choices.length;
+  $("#model-help").textContent = choices.length ? `Exact name: ${select.value}. Test the account to check availability.` : "Add an account to see its models. The ChatGPT list may take a few seconds to appear after sign-in.";
+  if (lastKey) $("#snip").textContent = snippet();
+}
+
+// ---------- cycle ----------
+let refreshing = false;
+async function refresh() {
+  if (refreshing || !S) return;
+  refreshing = true;
+  const current = generation;
+  try {
+    const state = await call("/admin/api/state");
+    if (!S || current !== generation) return;
+    const open = [...document.querySelectorAll(".acc-models[open]")].map(d => d.dataset.account);
+    S = state;
+    render();
+    document.querySelectorAll(".acc-models").forEach(d => { d.open = open.includes(d.dataset.account); });
+    $("#connection-error").hidden = true;
+  } catch (e) {
+    if (e.status !== 401) {
+      $("#connection-error").textContent = "Could not refresh. Displayed data may be outdated. Retrying automatically in a few seconds.";
+      $("#connection-error").hidden = false;
+    }
+  } finally { refreshing = false; }
+}
+let catalogAt = 0, catalogLoading = false;
+async function refreshCatalog() {
+  if (!S || catalogLoading || Date.now() - catalogAt < 60000) return;
+  catalogLoading = true;
+  const current = generation;
+  try {
+    const data = await call("/admin/api/catalog");
+    if (!S || current !== generation) return;
+    // Refresh promptly to avoid restoring stale counters after a slow call.
+    catalogAt = Date.now();
+    await refresh();
+  } catch (e) { if (e.status !== 401) console.debug("Model catalog temporarily unavailable"); }
+  finally { catalogLoading = false; }
+}
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (!S || document.hidden) return;
+  pollTimer = setTimeout(async () => {
+    if (!$("#dlg-add").open && !$("#dlg-prompt").open && !$(".menu")) {
+      await refresh();
+      refreshCatalog();
+    }
+    schedulePoll();
+  }, 15000);
+}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && S) { refresh(); refreshCatalog(); }
+  schedulePoll();
+});
 async function start() {
-  try { S = await call("/admin/api/state"); } catch { return showLogin(); }
+  try { S = await call("/admin/api/state"); }
+  catch (e) {
+    if (e.status === 401) return;
+    $("#loading").hidden = false;
+    $("#loading p").textContent = "Cannot load the console. Check that the server is running.";
+    $("#retry").hidden = false;
+    $("#login").hidden = true;
+    return;
+  }
+  $("#loading").hidden = true;
   $("#login").hidden = true;
   $("#console").hidden = false;
   history.replaceState(null, "", "/admin");
   render();
-  clearInterval(pollTimer);
-  pollTimer = setInterval(() => { if (!document.hidden && !$("#dlg-add").open) refresh(); }, 15000);
+  generation++;
+  catalogAt = 0;
+  refreshCatalog();
+  schedulePoll();
 }
+$("#retry").onclick = () => start();
 start();

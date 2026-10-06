@@ -1,216 +1,145 @@
-> Archive of the previous Python version. Private information was replaced with examples during import; use the current branch to install PocketRelay.
+# PocketRelay
 
-# CustomRemote
+**A personal gateway that connects your applications to your AI accounts.**
 
-Personal remote for Claude Code: a local server controlling the **`claude` CLI**
-(using your subscription through `claude login`) and exposing an **HTTP API and web UI**.
+PocketRelay provides a web console, password-based administration and an API compatible
+with part of the OpenAI protocol. It uses the Claude Code, Codex and Antigravity CLIs to
+forward requests to providers. **Models run at the provider, not on your computer**:
+you need an Internet connection and a compatible account.
 
-```
-browser ──HTTP/SSE──▶ FastAPI (127.0.0.1:8787) ──stdin/stdout stream-json──▶ claude -p (1 process / session)
-```
+This is an independent, experimental project, with no affiliation with or endorsement from
+OpenAI, Anthropic, Google or Apple. Provider terms may restrict or prohibit this type of
+integration, including personal use. Technical compatibility does not imply permission.
 
-## Run
+## Choose an installation
 
-```bash
-./run.sh
-# → prints http://localhost:8787/#token=… (open this link once to save the token)
-```
+| | Docker | macOS app | From source |
+|---|---|---|---|
+| Best for | Simple local installation | A Mac window and menu bar app | Development |
+| Requirements | Docker with Compose, Git, Bash terminal | A package built on macOS 14+ | Rust 1.97+, provider CLIs, PDF tools |
+| Console | `http://localhost:8787/admin` | In the app or `http://localhost:8788/admin` | `http://localhost:8787/admin` |
+| API | `http://localhost:8787/v1` | `http://localhost:8788/v1` | `http://localhost:8787/v1` |
 
-Requirements: `uv` and `claude` signed into your subscription (`claude login`).
-`ANTHROPIC_API_KEY` is removed from the CLI environment to use the subscription (`REMOTE_KEEP_API_KEY=1` retains it).
+These are alternative installation methods: **Docker is enough**. No external database,
+Node.js or LiteLLM installation is required. The macOS app works without Docker and uses
+the same console. Each installation keeps its own data.
 
-## Features
+**Current distribution: source code only.** No Developer ID-signed DMG, notarization or
+App Store version is provided. See the [macOS guide](docs/macos.md) to build a local package;
+do not assume a binary found elsewhere comes from this repository.
 
-- **Multiple concurrent sessions**, persisted in `data/` and automatically resumed with `--resume` after process or server restarts.
-- **Browser permissions**: Allow / Always (tool) / Deny with instructions, plus a banner and desktop notification when Claude is waiting.
-- **Token streaming**, Markdown rendering and collapsible tools (Edit diffs, TodoWrite checklists, Bash output…).
-- **Resume any CLI / VS Code session** from `~/.claude/projects`, optionally as a fork; copy a terminal command to continue a web session in the CLI.
-- Change **model / permission mode** live; changing effort or system instructions restarts the process while preserving the conversation.
-- **Subscription quota meters** (5-hour / weekly windows), estimated equivalent API cost and context size.
-- Autocomplete installed **slash commands** (skills, plugins…), prompt history (↑), session drafts, pasted/dropped images and **snippets**.
-- Shortcuts: `Enter` sends, `Shift+Enter` adds a line, `Escape` interrupts, `⌘K` searches and `⌘J` creates a session.
+## Get started with Docker
 
-## API
-
-Interactive docs: http://localhost:8787/docs. Authentication: `Authorization: Bearer $(cat data/token)` (or `?token=` for SSE).
-
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/api/sessions` | list |
-| POST | `/api/sessions` | create `{cwd, model?, permission_mode?, effort?, resume?, fork?}` |
-| POST | `/api/sessions/{id}/messages` | send `{text, images?}` |
-| GET | `/api/sessions/{id}/stream?since=N` | SSE event stream |
-| POST | `/api/sessions/{id}/permissions/{req}` | `{behavior: allow\|deny, always?, message?}` |
-| POST | `/api/sessions/{id}/interrupt` · `/stop` | interrupt the turn · stop the process |
-| PATCH | `/api/sessions/{id}` | `{name, model, permission_mode, effort, pinned…}` |
-| GET | `/api/history` | resumable CLI sessions |
-| GET | `/api/usage` | quotas and costs |
-| POST | `/api/run` | synchronous one-shot `{prompt, cwd, model?}` (default `dontAsk` mode) |
+Start Docker Desktop, or Docker Engine with the Compose plugin on Linux. On Windows,
+use a WSL terminal with Docker integration enabled.
 
 ```bash
-T=$(cat data/token)
-curl -s localhost:8787/api/run -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
-  -d '{"prompt":"Summarize the README","cwd":"~/projects/customremote"}' | jq -r .result
+git clone https://github.com/als0m3/pocketrelay.git
+cd pocketrelay
+./install.sh
 ```
 
-## OpenAI-compatible API (`/v1`)
+The installer builds the image, asks for a username and a password of at least 12 characters,
+and starts the service. Open **http://localhost:8787/admin**.
+The first build downloads dependencies and provider CLIs and may take several minutes.
+The image targets Linux x86_64; Docker Desktop emulates it on Apple Silicon.
 
-Use any OpenAI client: base URL `http://localhost:8787/v1`, API key from `data/token`.
+1. **Connect an account** in the console using the provider instructions, then test it.
+2. **Create an API key** for your application. Copy it when it appears and store it securely.
+3. **Copy the URL, key and exact model name** from the built-in guide into your application.
+
+You explicitly select an account through a model identifier such as `my-account/model-name`.
+Copy an identifier that actually appears in the list; available models depend on the account.
+Requests do not automatically fail over to another account.
+
+## Your first Python request
+
+Install the client in your Python environment (`pip install openai`). Set `POCKETRELAY_API_KEY`
+to your local gateway key and `POCKETRELAY_MODEL` to a model identifier copied from the console.
+Keep these values in your environment, never in committed code.
 
 ```python
+import os
 from openai import OpenAI
-client = OpenAI(base_url="http://localhost:8787/v1", api_key=open("data/token").read().strip())
-client.chat.completions.create(model="sonnet", messages=[{"role": "user", "content": "Hello"}])
+
+client = OpenAI(
+    base_url="http://localhost:8787/v1",  # Use 8788 for the macOS app
+    api_key=os.environ["POCKETRELAY_API_KEY"],
+)
+response = client.chat.completions.create(
+    model=os.environ["POCKETRELAY_MODEL"],
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
 ```
 
-| Endpoint | Supported features |
-|---|---|
-| `GET /v1/models`, `/v1/models/{id}` | ✓ |
-| `POST /v1/chat/completions` | multi-turn messages, system/developer, `stream` + `stream_options.include_usage`, images (data URL or HTTP), PDF (`file`), **tools / tool_choice / parallel_tool_calls** (plus legacy `functions`), `response_format` json_object / json_schema, `stop`, `n`, `reasoning_effort` |
-| `POST /v1/responses` | text or item `input`, `instructions`, `previous_response_id` (server memory), function tools and `function_call_output`, `text.format`, `reasoning.effort`, streaming with official event types |
-| `POST /v1/completions` | legacy API (prompt, stop, echo, stream) |
-| embeddings, audio, images, files… | 404 with an OpenAI-style error |
+Your console password and API key are different secrets. The internal master token is for
+administration; do not give it to your applications.
 
-Three providers selected by model name:
-
-| Models | Backend | Subscription |
-|---|---|---|
-| `opus`, `sonnet`, `haiku`, `fable`, `claude-*` | ephemeral `claude -p` | Claude (`claude login` / `claude setup-token`) |
-| `gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`… (catalog from Codex) | persistent `codex app-server`, ephemeral thread per request | ChatGPT (`codex login`) |
-| `gemini-3-pro`, `gemini-3-flash`, `gemini-*`, `gemma-*`, `gpt-oss-*` | ephemeral `antigravity -p --output-format stream-json` | Google AI (Antigravity CLI Google login) |
-
-**Open WebUI names**: `/v1/models` exposes names such as “Claude account · Sonnet” for `claude-account/sonnet`. **Every model must specify an account**: bare or unknown names return 400, and requests never switch accounts. `REMOTE_REQUIRE_ACCOUNT=0` restores Auto entries, failover and default models. Slugs follow account labels, retaining previous slugs and legacy IDs as aliases; unchanged system accounts retain `system-<provider>`. Control catalog entries with `REMOTE_MODELS_AUTO=0` or `REMOTE_MODELS_PER_ACCOUNT=0`.
-
-`gemini-*`, `gemma-*` and `gpt-oss-*` names use Antigravity CLI and fail explicitly when it is missing. Unknown names, including OpenAI-style names, are rejected. Codex uses `baseInstructions`, disabled tools, a read-only sandbox and native strict `json_schema` enforcement through `outputSchema`.
-
-**Codex PDF inputs** are converted with `pypdfium2`: extract text per page and render scanned/image pages as PNG (≤ 2048 pixels, `detail: high`). Configure `REMOTE_PDF_MODE` (`auto`, `images` for all pages, or `text`), `REMOTE_PDF_MAX_IMAGE_PAGES` (20) and `REMOTE_PDF_MAX_TEXT_CHARS` (400,000). Prefer `gpt-5.6-sol` or above for scans because `luna` makes OCR errors. Claude reads PDFs natively.
-
-Each request launches an ephemeral `claude -p` process **without Claude Code tools**, using `--safe-mode` (no CLAUDE.md, skills or MCP) and the client system prompt. CLI limitations:
-- around 2–4 seconds of startup time per request;
-- function calls are prompt-emulated: the model emits `<tool_call>` blocks converted into `tool_calls`, without native API guarantees;
-- `temperature`, `top_p`, `max_tokens`, `seed` and `logprobs` are ignored;
-- the CLI adds a short Claude Agent SDK preamble to the system prompt.
-
-**Antigravity** launches an ephemeral `antigravity -p` process in an empty working directory. It maps `reasoning_effort` to `--effort` and response formats to native `--json-schema`, with account state and Google sessions isolated in `HOME`. API-key variables are removed to use the subscription. The CLI cannot replace system instructions, so client instructions are prepended in `<system_instructions>` tags. Images are unsupported; PDFs become text with scanned pages omitted. CLI tools remain available, but the working directory is temporary and headless approval requests are rejected. Configure `REMOTE_ENABLE_ANTIGRAVITY`, `REMOTE_ANTIGRAVITY_MODELS`, `REMOTE_ANTIGRAVITY_MODEL`, `REMOTE_ANTIGRAVITY_FAST_MODEL`, `ANTIGRAVITY_BIN` and system-account `ANTIGRAVITY_HOME`. Run `antigravity models` after login for exact model slugs.
-
-`REMOTE_OAI_DEBUG=1` logs unrecognized tool output.
-
-### With Open WebUI (Docker)
+## Everyday use
 
 ```bash
-docker run -d --name open-webui-customremote -p 3000:8080 \
-  -e OPENAI_API_BASE_URL=http://host.docker.internal:8787/v1 \
-  -e OPENAI_API_KEY="$(cat data/token)" \
-  -e ENABLE_OLLAMA_API=False -e WEBUI_AUTH=False \
-  -v open-webui-customremote:/app/backend/data \
-  ghcr.io/open-webui/open-webui:main
-# → http://localhost:3000 (stop with: docker stop open-webui-customremote)
+docker compose logs --tail=100   # Local diagnostics
+docker compose stop            # Stop without deleting data
+docker compose up -d --wait     # Start again
 ```
 
-`host.docker.internal` is allowed by default.
+Accounts, keys and settings persist in a Docker volume. **`docker compose down -v` deletes
+that volume**: do not use it for an ordinary update.
+To update, back up the volume first, then run `git pull --ff-only` and `./install.sh`.
+The installer preserves your existing administrator account.
 
-## Config (env)
+Port already in use? Copy `.env.example` to `.env`, choose another `PORT`, then run the
+installer again. No port is exposed to your local network by default.
+The [configuration guide](docs/configuration.md) covers settings and common problems.
 
-`REMOTE_PORT` (8787) · `REMOTE_HOST` (127.0.0.1) · `REMOTE_TOKEN` · `REMOTE_ALLOWED_HOSTS` (additional hosts, such as a Tailscale name) · `CLAUDE_BIN` · `REMOTE_DATA`.
+## Need many keys? LiteLLM is optional
 
-## Security
+PocketRelay can already create and revoke multiple keys. Its keys grant access to **all active
+accounts**; they do not provide budgets or model-specific restrictions.
 
-The server can execute code on your machine through Claude. It binds to `127.0.0.1`, requires a token and rejects unknown `Host` headers to prevent DNS rebinding. For phone access, prefer Tailscale (`REMOTE_HOST=<tailscale-ip>` and `REMOTE_ALLOWED_HOSTS`) over public exposure.
+For more advanced key and budget management, you can place a gateway such as LiteLLM in front:
+**applications → LiteLLM → PocketRelay → provider**. Create a dedicated PocketRelay key for
+that gateway and configure models using their exact identifiers. This is an architectural
+option, not a project dependency.
 
-### Antigravity accounts
+If multiple users share one upstream key, disable Responses history with
+`REMOTE_RESPONSES_MAX_MB=0`: PocketRelay otherwise sees them as one identity.
+Adding LiteLLM does not authorize subscription sharing or resale, or change provider terms.
 
-Antigravity replaced Gemini CLI for individual accounts in June 2026. Google
-login requires a **controlling terminal** (`/dev/tty`), so the console cannot drive it,
-and keychain-backed tokens cannot simply be copied from another machine.
-Create the account in `/admin`, which displays the server command to run:
+## How it works and its limits
 
-```bash
-oc -n custom-remote exec -it deploy/claude-api -- \
-  env HOME=/data/accounts/<account-id>/antigravity antigravity
-# Open the CLI URL in your browser, authorize access and paste the code back.
-```
+- One Rust server serves the static frontend; no JavaScript build step is needed to install it.
+- Chat Completions, Responses, Completions and a model catalog, with JSON or SSE streaming.
+- Images and PDFs depend on provider capabilities; PDFs use Poppler or PDFKit on macOS.
+- Local authentication, with optional OIDC SSO for advanced configurations.
+- Claude sessions, which can act on the host machine, stay disabled in the guided installations.
 
-`-it` is required: login fails without a terminal. The system account uses
-`ANTIGRAVITY_HOME` (`/data/antigravity`) on the volume to survive restarts.
+OpenAI compatibility is partial: there are no embeddings, audio, image generation, files or
+batches APIs. Some parameters are not forwarded to the CLIs. Tool calls are adapted through
+the prompt, and JSON mode does not guarantee schema compliance.
+Read the [architecture and limitations](docs/architecture.md) before integrating a demanding client.
 
-## OKD deployment (gateway + Open WebUI + LiteLLM + SSO)
+Provider credentials are needed on disk and are not all encrypted. Read [SECURITY.md](SECURITY.md)
+for storage, trust boundaries and the scope of verification. Automated tests use simulated
+providers; they do not prove the availability of, or permission to use, real services.
 
-On the cluster, the private `ghcr.io/als0m3/custom-remote` image serves only `/v1` and the **`/admin` console**; Claude Code sessions are disabled with `REMOTE_ENABLE_SESSIONS=0`.
+## Development and license
 
-- **`/admin` console** (OIDC SSO, administrators allowlisted by email or Keycloak group/role; master-token recovery):
-  - **Multiple accounts per provider**, ordered by priority: tested Claude setup tokens, Codex device-code login with isolated `CODEX_HOME`/app-server, and Antigravity server-terminal login with isolated `HOME`;
-  - **Automatic failover**: quota/authentication failure before the first output pauses the account (until quota reset or 15 minutes, or 10 minutes for authentication) and retries the next account;
-  - per-account quotas, testing, activation, renaming, token replacement/reconnection and deletion. System accounts use host login; `REMOTE_SYSTEM_ACCOUNTS` (`SYSTEM_ACCOUNTS`) selects maintained providers, empty for none, defaulting to `antigravity` on the cluster. Excluded accounts are not recreated and can be deleted;
-  - per-account **model lists** with explicit request names such as `claude-account/sonnet`, copyable as `openai/…` for LiteLLM;
-  - `sk-cr-…` API keys stored as hashes, displayed once, with Python / curl / Open WebUI examples.
-- **Open WebUI**: SSO-only login, new accounts awaiting approval, background tasks using `haiku`.
-- **LiteLLM** runs alongside Open WebUI as another `/v1` client, with its own revocable `sk-cr` key and the same usage limits. It serves `opus` / `sonnet` / `haiku` / `fable` with virtual keys and team budgets, and can connect external providers such as OpenAI, Gemini or Mistral.
+The [history notes](docs/history.md) explain the imported commits and cleanup before publication.
 
-| Public hostname | Service | Internal route |
-|---|---|---|
-| `relay.example.test` | LiteLLM (API + SSO console) | `relay-llm.apps.cluster.example.test` |
-| `relay-chat.example.test` | Open WebUI | `relay.apps.cluster.example.test` |
-| `relay-api.example.test` | `/admin` console; `/v1` internal-only for LiteLLM and Open WebUI | `relay-api.apps.cluster.example.test` |
+- [Contribute and run tests](CONTRIBUTING.md)
+- [Build the macOS app](docs/macos.md)
+- [Third-party components](THIRD-PARTY.md)
 
-Internal names remain unchanged because changing an OKD route hostname requires recreation. Map public names in `deploy/vps/relay.conf`.
+Original PocketRelay code is licensed under [MIT](LICENSE). Third-party components retain their
+own licenses and terms. The internal `customremote` name, `REMOTE_*` variables and existing key
+prefix are retained for technical compatibility.
 
-```bash
-GHCR_TOKEN=<PAT-write:packages> ./deploy/build-push.sh           # build amd64 and push privately
-cp deploy/okd/params.env.example deploy/okd/params.env           # hosts, issuer, client, administrators
-OIDC_CLIENT_SECRET=… GHCR_PULL_TOKEN=<PAT read:packages> ./deploy/okd/deploy.sh
-```
+## Author's note
 
-Then configure the VPS reverse proxy after pointing all three DNS names to it;
-the certificate is expanded when required:
-
-```bash
-./deploy/vps/install.sh root@203.0.113.10
-```
-
-Create a confidential OIDC client with the standard flow and these redirect URIs:
-`https://<PUBLIC_CHAT_HOST>/oauth/oidc/callback`, `https://<PUBLIC_API_HOST>/admin/auth/callback`
-and `https://<PUBLIC_LITELLM_HOST>/sso/callback`.
-
-### LiteLLM
-
-`https://relay.example.test` serves the LiteLLM API with virtual keys and its console
-on `/ui`, **sign in through Keycloak SSO**, using the same client as `/admin` and Open WebUI.
-`ADMIN_ROLE` → `proxy_admin`, `ACCESS_ROLE` → `internal_user`; no matching role grants read-only access.
-Register this redirect URI: `https://<PUBLIC_LITELLM_HOST>/sso/callback`.
-
-The Keycloak client requires PKCE: `GENERIC_CLIENT_USE_PKCE=true`. Without Redis,
-LiteLLM keeps `code_verifier` in pod memory; use one replica with `Recreate`.
-A restart during login invalidates that attempt; simply start again.
-
-LiteLLM SSO is free for **up to five database users**. A sixth account requires
-an enterprise license to sign in. This is an administration console,
-while chat has no corresponding account-count limit.
-
-The username/password form is disabled: `disable_password_login_when_sso_enabled`
-makes `/login` return 403 and sends `/ui` directly to Keycloak (`AUTO_REDIRECT_UI_LOGIN_TO_SSO`).
-`relay.conf` additionally returns 404 for public /login requests.
-
-If Keycloak is unavailable, console access also fails. The master key remains
-a valid **API key** for managing keys, budgets and models:
-
-```bash
-KEY=$(oc -n custom-remote get secret custom-remote -o jsonpath='{.data.litellm-master-key}' | base64 -d)
-curl -s https://relay.example.test/v1/models -H "Authorization: Bearer $KEY"
-```
-
-To reopen the console during a prolonged SSO outage, remove `disable_password_login_when_sso_enabled`
-from the `litellm-config` ConfigMap and restart `deploy/litellm`. This is an explicit
-configuration change visible in the repository.
-
-The `litellm-config` ConfigMap declares no models. Add them through the UI
-(*Models* tab), with database persistence (`STORE_MODEL_IN_DB`) and no redeployment.
-For gateway models, reference pod environment variables instead of pasting the key:
-*Provider* `OpenAI-Compatible`, *Model* `openai/<sonnet|opus|haiku|fable|gpt-…>`,
-*API Base* `os.environ/CLAUDE_API_BASE`, *API Key* `os.environ/CLAUDE_API_KEY`. LiteLLM encrypts
-the stored value and resolves the reference at request time, keeping `sk-cr` out of configuration. State lives in PostgreSQL
-(`litellm-db`, 2 Gi PVC); `litellm-salt-key` encrypts provider keys in the database
-and must never change.
-
-To offer external models in chat, add an OpenAI connection in Open WebUI using
-semicolon-separated `OPENAI_API_BASE_URLS` / `OPENAI_API_KEYS`, pointing to `http://litellm:4000/v1`.
-Disable duplicate gateway models in LiteLLM so they do not appear twice.
+I am sharing this experimental project as a tool developed for my personal use.
+I do not endorse abusive or unlawful use, or any use that violates the terms of the services
+involved. Each user remains responsible for their accounts, data and use of the tool.
+The project is provided as is, without warranty, under the MIT license. This note does not
+replace provider terms or applicable legal obligations, and does not authorize bypassing them.
