@@ -3,7 +3,7 @@
 The app is another way to use PocketRelay, with a native window and menu bar icon. It bundles
 the Rust server and reuses the existing web console. Docker remains a separate option.
 An Apple Silicon preview is available in the
-[v0.3.0 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.0), with a checksum.
+[v0.3.1 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.1), with a checksum.
 The minimum is macOS 14.0; this preview was tested on macOS 27.0.1 (arm64).
 Start with the [installation and usage tutorial](getting-started.md). There is no Intel
 package, Apple Developer ID signature, notarization or App Store version in this release.

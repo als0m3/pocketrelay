@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='customremote-oidc-') as tmp:
   for _ in range(100):
    try:request('/healthz');break
    except OSError:time.sleep(.02)
-  for label,override,wanted in [('valide',{},303),('nonce',{'nonce':'wrong'},403),('expiration',{'exp':int(time.time())-120},403),('role',{'groups':['users']},403)]:
+  for label,override,wanted in [('valid',{},303),('future nbf',{'nbf':int(time.time())+300},403),('malformed nbf',{'nbf':str(int(time.time())+300)},403),('malformed exp',{'exp':'never'},403),('nonce',{'nonce':'wrong'},403),('expiration',{'exp':int(time.time())-120},403),('role',{'groups':['users']},403)]:
    r=request('/admin/auth/login');assert r[0]==303,r
    q=urllib.parse.parse_qs(urllib.parse.urlparse(r[1]['location']).query);state.update(nonce=q['nonce'][0],challenge=q['code_challenge'][0],override=override)
    cookie=r[1]['set-cookie'].split(';')[0];callback='/admin/auth/callback?'+urllib.parse.urlencode({'state':q['state'][0],'code':'test'})
@@ -49,6 +49,6 @@ with tempfile.TemporaryDirectory(prefix='customremote-oidc-') as tmp:
    checks.append(label)
   r=request('/admin/auth/config',{'Host':'public.example.test'});cfg=json.loads(r[2]);assert cfg['oidc'] and not cfg['token_login'] and not cfg['password_login']
   assert request('/admin/auth/token',{'Host':'public.example.test','X-Admin':'1'},'POST',{'token':'anything'})[0]==403
-  print('SSO OK: PKCE, state cookie, RSA signature, nonce, expiration, role, replay prevention and required SSO on the public domain.')
+  print('SSO OK: PKCE, state cookie, RSA signature, nonce, expiration, not-before and malformed dates, role, replay prevention and required SSO on the public domain.')
  finally:
   proc.terminate();proc.wait(timeout=10);provider.shutdown();provider.server_close()

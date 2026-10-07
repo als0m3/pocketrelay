@@ -420,7 +420,7 @@ impl Auth {
             .ok_or_else(|| Error::new(403, "Unknown SSO key"))?;
         let key = jsonwebtoken::DecodingKey::from_jwk(jwk)
             .map_err(|_| Error::new(403, "Invalid SSO key"))?;
-        let mut validation = jsonwebtoken::Validation::new(head.alg);
+        let mut validation = jwt_validation(head.alg);
         validation.set_audience(&[&client_id]);
         validation.set_issuer(&[text(&d, "issuer")]);
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
@@ -470,4 +470,11 @@ impl Auth {
             43200,
         ))
     }
+}
+
+/// Validate optional not-before dates as well as the required expiration.
+pub fn jwt_validation(algorithm: jsonwebtoken::Algorithm) -> jsonwebtoken::Validation {
+    let mut validation = jsonwebtoken::Validation::new(algorithm);
+    validation.validate_nbf = true;
+    validation
 }

@@ -35,8 +35,14 @@ content according to their own policies.
 
 `Cargo.lock` is committed. The three CLIs in the Dockerfile are downloaded at fixed versions
 and verified against fixed SHA-256 hashes. Base images and Debian packages are not pinned
-to a point in time, so builds are not fully reproducible. The macOS package uses locally
-installed Claude/Codex CLIs; verify their versions before each build.
+to a point in time, so builds are not fully reproducible. The macOS app downloads tools on
+first use from the official HTTPS URLs pinned in `src/provider-tools.json`, verifies size
+and SHA-256 before installation, and retains them in its private data directory. Provider
+executables are not bundled in the DMG. Tool versions are updated through app releases.
+
+CI checks locked Rust dependency versions against OSV advisories. JWT validation rejects
+malformed standard claims and checks expiration and optional not-before dates. These checks
+cannot detect every vulnerability in application code or in external provider tools.
 
 The source repository does not include real credentials, data directories or built packages.
 Never commit `.env`, backups, tokens, private certificates, account screenshots or unsanitized

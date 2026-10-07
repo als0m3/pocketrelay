@@ -375,3 +375,41 @@ fn legacy_system_label_keeps_model_prefix() {
         );
     }
 }
+
+#[test]
+fn jwt_dates_reject_malformed_and_future_claims() {
+    use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header};
+    let secret = config::random(32);
+    let mut validation = auth::jwt_validation(Algorithm::HS256);
+    validation.validate_aud = false;
+    let now = config::now() as u64;
+    for (label, overrides, accepted) in [
+        ("optional nbf absent", json!({}), true),
+        ("nbf already passed", json!({"nbf":now-1}), true),
+        ("future nbf", json!({"nbf":now+300}), false),
+        ("string nbf", json!({"nbf":(now+300).to_string()}), false),
+        ("boolean nbf", json!({"nbf":true}), false),
+        ("null nbf", json!({"nbf":null}), false),
+        ("expired", json!({"exp":now-120}), false),
+        ("string exp", json!({"exp":"never"}), false),
+        ("null exp", json!({"exp":null}), false),
+    ] {
+        let mut claims = json!({"sub":"fixture", "exp":now+300});
+        claims
+            .as_object_mut()
+            .unwrap()
+            .extend(overrides.as_object().unwrap().clone());
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap();
+        let result = decode::<Value>(
+            &token,
+            &DecodingKey::from_secret(secret.as_bytes()),
+            &validation,
+        );
+        assert_eq!(result.is_ok(), accepted, "{label}");
+    }
+}

@@ -13,11 +13,11 @@ separate accounts and keys. Neither requires LiteLLM or an external database.
 
 The first downloadable package is an **Apple Silicon preview** (M-series Macs).
 There is no tested Intel DMG in this release. Open Apple menu → **About This Mac** to
-check your chip. See the [release notes](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.0)
+check your chip. See the [release notes](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.1)
 for the package's minimum macOS version and the system actually tested.
 
-1. Open the [v0.3.0 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.0).
-2. Under **Assets**, download `PocketRelay-0.3.0-arm64.dmg`. The GitHub “Source code”
+1. Open the [v0.3.1 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.1).
+2. Under **Assets**, download `PocketRelay-0.3.1-arm64.dmg`. The GitHub “Source code”
    archives are for developers; they are not the Mac installer.
 3. Open the DMG and drag **PocketRelay** onto **Applications**.
 4. Eject the disk image, then open PocketRelay from Applications.
@@ -93,7 +93,7 @@ You only need one provider to get started.
 
 ### Claude
 
-1. In the Mac app, click **Connect Claude on this Mac**. Terminal opens the bundled
+1. In the Mac app, click **Connect Claude on this Mac**. Terminal opens the downloaded
    setup assistant; complete the provider's sign-in flow in your browser.
 2. Copy the generated `sk-ant-…` subscription token and paste it into PocketRelay's
    **Token** field. Keep this token private.

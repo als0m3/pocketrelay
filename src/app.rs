@@ -157,7 +157,7 @@ impl App {
         if secret.is_empty() {
             return default;
         }
-        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+        let mut validation = crate::auth::jwt_validation(jsonwebtoken::Algorithm::HS256);
         validation.validate_aud = false;
         let Ok(v) = jsonwebtoken::decode::<Value>(
             token,
