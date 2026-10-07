@@ -404,7 +404,7 @@ function segmented() {
 function renderAddForm() {
   $("#add-title").textContent = "Add an account";
   $("#add-sub").textContent = "Connect a subscription, then use the models linked to that account.";
-  const name = h("input", { class: "input", placeholder: addProvider === "claude" ? "ex. Perso, Pro…" : "ex. ChatGPT perso", maxlength: 40 });
+  const name = h("input", { class: "input", placeholder: addProvider === "claude" ? "e.g. Personal, Work…" : "e.g. Personal ChatGPT", maxlength: 40 });
   const cancel = h("button", { class: "btn ghost", onclick: () => $("#dlg-add").close() }, "Cancel");
   if (addProvider === "claude") {
     const tok = h("input", { class: "input mono", type: "password", placeholder: "sk-ant-oat01-…", autocomplete: "off" });
@@ -488,7 +488,7 @@ function deviceStep(account, login) {
     if (acc?.identity) {
       clearInterval(loginPoll);
       S = s; render();
-      success(`${acc.label} is connected`, `${acc.identity.email || ""}${acc.identity.planType ? " · forfait " + acc.identity.planType : ""}`);
+      success(`${acc.label} is connected`, `${acc.identity.email || ""}${acc.identity.planType ? " · plan " + acc.identity.planType : ""}`);
     } else if (Date.now() - t0 > 15 * 60 * 1000) {
       clearInterval(loginPoll);
       $("#add-body").replaceChildren(h("div", { class: "result bad" }, "The code has expired. Restart sign-in from the account menu."));

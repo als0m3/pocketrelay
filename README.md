@@ -16,7 +16,7 @@ integration, including personal use. Technical compatibility does not imply perm
 | | Docker | macOS app | From source |
 |---|---|---|---|
 | Best for | Simple local installation | A Mac window and menu bar app | Development |
-| Requirements | Docker with Compose, Git, Bash terminal | A package built on macOS 14+ | Rust 1.97+, provider CLIs, PDF tools |
+| Requirements | Docker with Compose, Git, Bash terminal | Apple Silicon Mac; see release requirements | Rust 1.97+, provider CLIs, PDF tools |
 | Console | `http://localhost:8787/admin` | In the app or `http://localhost:8788/admin` | `http://localhost:8787/admin` |
 | API | `http://localhost:8787/v1` | `http://localhost:8788/v1` | `http://localhost:8787/v1` |
 
@@ -24,9 +24,14 @@ These are alternative installation methods: **Docker is enough**. No external da
 Node.js or LiteLLM installation is required. The macOS app works without Docker and uses
 the same console. Each installation keeps its own data.
 
-**Current distribution: source code only.** No Developer ID-signed DMG, notarization or
-App Store version is provided. See the [macOS guide](docs/macos.md) to build a local package;
-do not assume a binary found elsewhere comes from this repository.
+**Mac app preview:** download the Apple Silicon DMG from the
+[v0.2.0 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.0).
+It uses an ad hoc signature, without an Apple Developer ID or notarization; macOS requires
+manual approval on first launch. No Intel DMG or App Store version is provided in this release.
+
+**New here? Follow the [step-by-step installation and usage guide](docs/getting-started.md)**:
+install the app or Docker, connect a provider, create a key and make your first request.
+The [macOS guide](docs/macos.md) covers package details and building from source.
 
 ## Get started with Docker
 

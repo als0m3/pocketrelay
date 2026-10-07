@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='customremote-dmg-') as directory:
         result = run('Gatekeeper distribution assessment (recorded separately)', ['spctl', '--assess', '--type', 'execute', '--verbose=2', destination], allowed=(0, 3))
         report['gatekeeper_accepted'] = result.returncode == 0
         if not report['gatekeeper_accepted']:
-            print('LIMIT: Gatekeeper rejects this local ad-hoc build; Developer ID/notarization still required.', flush=True)
+            print('LIMIT: Gatekeeper rejects automatic opening of this ad-hoc build; manual approval is required.', flush=True)
         run('Bundled executables without Homebrew PATH', ['python3', ROOT / 'macos/scripts/verify.py', destination])
         with socket.socket() as probe:
             probe.settimeout(1)

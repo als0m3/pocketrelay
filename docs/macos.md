@@ -2,12 +2,18 @@
 
 The app is another way to use PocketRelay, with a native window and menu bar icon. It bundles
 the Rust server and reuses the existing web console. Docker remains a separate option.
-This repository preparation provides no public package, Developer ID release or App Store app.
+An Apple Silicon preview is available in the
+[v0.2.0 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.0), with a checksum.
+The bundled minimum is macOS 14.0; this preview was tested on macOS 27.0.1 (arm64).
+Start with the [installation and usage tutorial](getting-started.md). There is no Intel
+package, Apple Developer ID signature, notarization or App Store version in this release.
 
-## Use a locally built package
+## Install the release or a locally built package
 
 1. Open the DMG for your architecture and drag PocketRelay to Applications.
-2. Open the app and choose your username and password.
+2. Open the app; if macOS blocks it, use System Settings → Privacy & Security → Open Anyway
+   as described in the [tutorial](getting-started.md#if-macos-blocks-the-first-launch).
+   Choose your username and password.
 3. **Generate a password** fills both fields with 24 random characters. Copy it into your
    password manager. This option is also available when changing the password.
 4. Connect a provider account, create a key and copy settings from the built-in guide.
@@ -19,7 +25,7 @@ still apply.
 A local package is **ad hoc-signed**, without an Apple developer identity, and is not notarized.
 macOS may refuse to open it. This does not mean Apple has approved the package.
 Do not disable Gatekeeper globally. CI does not perform Developer ID signing or notarization.
-This preparation does not build or publish a new DMG.
+Download release assets from this repository, not an unrelated mirror.
 
 ## Everyday use
 
@@ -59,7 +65,10 @@ options are for a separate, explicit distribution process with your own rights a
 `MACOS_SKIP_DMG=1` skips the DMG. The build matches the host Mac's architecture. The minimum
 macOS version is adjusted to bundled dependencies; the Intel variant needs separate testing.
 PDFKit supplies PDF support without Poppler. The manifest records source filenames and
-hashes, not personal paths from the build machine.
+hashes. Compiler source paths are remapped, download metadata is removed, and the build
+checks the bundle for local build/home paths and accidental credential files before packaging.
+For additional private terms, use `macos/scripts/check-privacy.py --private-terms-file`
+with a local JSON array kept outside the repository.
 
 Redistributing third-party executables requires a separate review of their terms and notices:
 see [bundled components](../macos/THIRD-PARTY.md). A successful build does not validate those rights.
@@ -83,7 +92,8 @@ the volume and tests the copy. It reports functional results separately from Gat
 functional success does not imply macOS acceptance. The report stays at
 `/tmp/customremote-dmg-test.json` for script compatibility.
 
-PocketRelay source preparation checks Rust and Swift without building a new package, so it
-does not certify a PocketRelay DMG. Before releasing binaries, test the exact package, real
-interface, sign-in flows, launch at login and advertised macOS versions and architectures.
+Release notes record the exact package, tested operating system and functional checks.
+The initial Apple Silicon preview is tested on the release machine; a deployment target
+is not evidence of testing every supported macOS version. Provider protocol tests use
+fixtures, and launch-at-login behavior and all real provider sign-in flows are not certified.
 App Store distribution, automatic updates and installation synchronization are not implemented.

@@ -41,5 +41,5 @@ jobs:
       - name: Check scripts and metadata
         run: |
           bash -n macos/build.sh macos/notarize.sh
-          python3 -m py_compile macos/scripts/bundle.py macos/scripts/verify.py macos/scripts/test-dmg.py tests/desktop.py
+          python3 -m py_compile macos/scripts/bundle.py macos/scripts/verify.py macos/scripts/test-dmg.py macos/scripts/check-privacy.py tests/desktop.py
           plutil -lint macos/Info.plist macos/cli-entitlements.plist

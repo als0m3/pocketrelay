@@ -3,7 +3,8 @@
 The package includes Claude Code and Codex CLI executables from the build machine, plus
 Antigravity CLI 1.2.10 (or an explicitly supplied executable). Original file hashes are
 recorded in `manifest.json`. Notices found in local installations or archives are copied
-alongside that file.
+alongside that file. The Codex Apache-2.0 license and NOTICE from tag `rust-v0.155.1`
+are also included under `ThirdParty/codex`.
 
 - Claude Code: https://code.claude.com/docs/en/legal-and-compliance; Anthropic terms apply.
 - Codex CLI: https://github.com/openai/codex (Apache-2.0).

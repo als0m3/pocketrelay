@@ -11,16 +11,24 @@ app="$PWD/dist/macos/PocketRelay.app"
 # This directory only contains generated artifacts, never user data.
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/bin" "$app/Contents/Frameworks"
+# Remap compiler paths so panic locations and metadata do not reveal the build machine.
+export CARGO_ENCODED_RUSTFLAGS="${CARGO_ENCODED_RUSTFLAGS:+${CARGO_ENCODED_RUSTFLAGS}$'\x1f'}--remap-path-prefix=$HOME=/build-home"$'\x1f'"--remap-path-prefix=$PWD=/src/pocketrelay"
 cargo build --release --locked
 cp target/release/customremote "$app/Contents/Resources/bin/"
 cp macos/Info.plist "$app/Contents/Info.plist"
 cp -R static "$app/Contents/Resources/"
 python3 macos/scripts/bundle.py "$app/Contents/Resources"
 cp macos/THIRD-PARTY.md "$app/Contents/Resources/ThirdParty/README.md"
+cp LICENSE "$app/Contents/Resources/LICENSE.txt"
+cp -R macos/notices/. "$app/Contents/Resources/ThirdParty/"
 xcrun swiftc -swift-version 5 -O -target "${arch}-apple-macosx14.0" \
+  -file-prefix-map "$HOME=/build-home" -file-prefix-map "$PWD=/src/pocketrelay" \
+  -debug-prefix-map "$HOME=/build-home" -debug-prefix-map "$PWD=/src/pocketrelay" \
   -framework AppKit -framework WebKit -framework ServiceManagement \
   macos/Sources/main.swift -o "$app/Contents/MacOS/PocketRelay"
 xcrun swiftc -swift-version 5 -O -target "${arch}-apple-macosx14.0" -framework PDFKit -framework AppKit \
+  -file-prefix-map "$HOME=/build-home" -file-prefix-map "$PWD=/src/pocketrelay" \
+  -debug-prefix-map "$HOME=/build-home" -debug-prefix-map "$PWD=/src/pocketrelay" \
   macos/Sources/PDFTool.swift -o "$app/Contents/Resources/bin/pdfinfo"
 cp "$app/Contents/Resources/bin/pdfinfo" "$app/Contents/Resources/bin/pdftotext"
 cp "$app/Contents/Resources/bin/pdfinfo" "$app/Contents/Resources/bin/pdftoppm"
@@ -28,6 +36,8 @@ iconset="$PWD/dist/macos/AppIcon.iconset"
 mkdir -p "$iconset"
 xcrun swift macos/scripts/icon.swift "$iconset"
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+# Drop download provenance and Finder metadata before signing and packaging.
+xattr -cr "$app"
 identity="${MACOS_SIGN_IDENTITY:--}"
 sign_options=()
 if [[ "$identity" != - ]]; then sign_options=(--options runtime --timestamp); fi
@@ -45,6 +55,7 @@ done
 codesign --force --sign "$identity" ${sign_options[@]+"${sign_options[@]}"} "$app"
 codesign --verify --deep --strict "$app"
 python3 macos/scripts/verify.py "$app"
+python3 macos/scripts/check-privacy.py "$app"
 if [[ "${MACOS_SKIP_DMG:-0}" != 1 ]]; then
   stage="$(mktemp -d)"
   trap 'rm -rf "$stage"' EXIT

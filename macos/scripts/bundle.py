@@ -37,7 +37,7 @@ def copy_binary(source, dest):
     if source in seen:
         return seen[source]
     if arch not in run('lipo', '-archs', str(source)).split():
-        raise RuntimeError(f'{source}: architecture {arch} absente')
+        raise RuntimeError(f'{source.name}: architecture {arch} is missing')
     seen[source] = dest
     shutil.copy2(source, dest)
     dest.chmod(0o755)
