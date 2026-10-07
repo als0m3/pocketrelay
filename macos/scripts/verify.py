@@ -10,7 +10,7 @@ resources = app / 'Contents/Resources'
 bindir = resources / 'bin'
 with tempfile.TemporaryDirectory(prefix='customremote-bundle-') as home:
     env = {'HOME': home, 'PATH': str(bindir) + ':/usr/bin:/bin', 'LANG': 'en_US.UTF-8', 'DISABLE_AUTOUPDATER': '1'}
-    for tool in ['customremote', 'claude', 'codex', 'antigravity', 'pdftotext', 'pdftoppm', 'pdfinfo']:
+    for tool in ['customremote', 'pdftotext', 'pdftoppm', 'pdfinfo']:
         option = '-v' if tool.startswith('pdf') else '--version'
         result = subprocess.run([str(bindir / tool), option], env=env, capture_output=True, text=True, timeout=30)
         if result.returncode:
@@ -20,3 +20,7 @@ with tempfile.TemporaryDirectory(prefix='customremote-bundle-') as home:
         linked = subprocess.check_output(['otool', '-L', str(binary)], text=True)
         assert '/opt/homebrew/' not in linked and '/usr/local/' not in linked, linked
 print('PASS: no external Homebrew dylib dependencies')
+
+for provider in ("claude", "codex", "antigravity"):
+    assert not (bindir / provider).exists(), "Provider executables must be downloaded on demand"
+print("PASS: lightweight bundle contains no provider executables")

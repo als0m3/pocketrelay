@@ -1,6 +1,6 @@
 [package]
 name = "customremote"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.97"
 license = "MIT"
@@ -8,6 +8,8 @@ publish = false
 description = "Standalone OpenAI-compatible gateway and AI account console"
 
 [dependencies]
+flate2 = "1"
+tar = "0.4"
 anyhow = "1"
 async-stream = "0.3"
 axum = { version = "0.8", features = ["macros"] }

@@ -136,6 +136,7 @@ pub fn clean_env(full: bool) -> HashMap<String, String> {
 
 #[derive(Clone)]
 pub struct Config {
+    pub managed_tools: Option<std::sync::Arc<crate::tools::Installer>>,
     pub data: PathBuf,
     pub static_dir: PathBuf,
     pub host: String,
@@ -156,6 +157,12 @@ pub struct Config {
     pub max_concurrency: usize,
 }
 impl Config {
+    pub async fn ensure_tool(&self, provider: &str) -> crate::error::Result<()> {
+        if let Some(tools) = &self.managed_tools {
+            tools.ensure(provider).await?;
+        }
+        Ok(())
+    }
     pub fn read() -> Result<Self> {
         let data = expand(&envs("REMOTE_DATA", "data"));
         std::fs::create_dir_all(&data)?;
@@ -190,7 +197,9 @@ impl Config {
         } else {
             String::new()
         };
-        Ok(Self {
+        let managed_tools = crate::tools::Installer::configured()?;
+        let mut config = Self {
+            managed_tools,
             token: secret(&data, "REMOTE_TOKEN", "token")?,
             session_secret: secret(&data, "REMOTE_SESSION_SECRET", "session_secret")?,
             data,
@@ -220,6 +229,16 @@ impl Config {
             require_account: flag("REMOTE_REQUIRE_ACCOUNT", true),
             request_timeout: number("REMOTE_REQUEST_TIMEOUT", 600),
             max_concurrency: number("REMOTE_MAX_CONCURRENCY", 6) as usize,
-        })
+        };
+        if let Some(tools) = &config.managed_tools {
+            config.claude = tools.binary("claude");
+            if flag("REMOTE_ENABLE_CODEX", true) {
+                config.codex = tools.binary("codex");
+            }
+            if flag("REMOTE_ENABLE_ANTIGRAVITY", true) {
+                config.antigravity = tools.binary("antigravity");
+            }
+        }
+        Ok(config)
     }
 }

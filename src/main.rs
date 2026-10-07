@@ -10,6 +10,7 @@ mod prompt;
 mod session_api;
 mod sessions;
 mod store;
+mod tools;
 pub use app::App;
 use axum::{
     body::to_bytes,

@@ -13,11 +13,11 @@ separate accounts and keys. Neither requires LiteLLM or an external database.
 
 The first downloadable package is an **Apple Silicon preview** (M-series Macs).
 There is no tested Intel DMG in this release. Open Apple menu → **About This Mac** to
-check your chip. See the [release notes](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.1)
+check your chip. See the [release notes](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.0)
 for the package's minimum macOS version and the system actually tested.
 
-1. Open the [v0.2.1 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.1).
-2. Under **Assets**, download `PocketRelay-0.2.1-arm64.dmg`. The GitHub “Source code”
+1. Open the [v0.3.0 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.0).
+2. Under **Assets**, download `PocketRelay-0.3.0-arm64.dmg`. The GitHub “Source code”
    archives are for developers; they are not the Mac installer.
 3. Open the DMG and drag **PocketRelay** onto **Applications**.
 4. Eject the disk image, then open PocketRelay from Applications.
@@ -25,9 +25,24 @@ for the package's minimum macOS version and the system actually tested.
    fills both password fields with a random password. Save it in your password manager,
    then choose **Create and start**.
 
-The app includes its server and tools. You do not need to install Docker, Rust, Python,
+The app includes its server and downloads each provider tool on first use. You do not need to install Docker, Rust, Python,
 Homebrew or Node.js. The console is inside the app and also at
 **http://localhost:8788/admin** while it is running.
+
+#### Installing provider tools
+
+Click **Add** for the provider you want. The app shows **Installing tools…** with download
+progress, verifies the download, then opens account setup automatically. Only that provider's
+tool is downloaded. It is kept in the app's data directory and reused on later launches.
+
+Keep an Internet connection for the first installation. If it fails, choose **Retry installation**.
+**Continue later** closes the dialog while installation continues in the background; quitting
+the app interrupts it. The next attempt restarts an incomplete download. Downloading a tool
+does not connect your account or generate model usage. A provider's tool can use approximately
+180–240 MB of disk space; the app stays small if you only use one provider.
+
+Existing accounts from PocketRelay 0.2.x are preserved. Their tools install when you next use
+them. Docker still includes its provider tools and does not use this installer.
 
 #### If macOS blocks the first launch
 

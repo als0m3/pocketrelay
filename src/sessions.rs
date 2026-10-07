@@ -312,6 +312,7 @@ impl Session {
                 .find(|a| a["provider"] == "claude" && st.available(a))
                 .and_then(|a| st.token(a))
         };
+        app.config.ensure_tool("claude").await?;
         let mut cmd = backend::command(&app.config.claude, backend::claude_env(token, true));
         cmd.current_dir(text(&m, "cwd")).args([
             "-p",

@@ -24,7 +24,7 @@ const h = (tag, attrs = {}, ...kids) => {
   return el;
 };
 if (desktop) {
-  $("#guide-account p").textContent = "Click Add. ChatGPT provides a code to enter in your browser. For Claude and Google, the sign-in button opens the setup assistant in Terminal automatically, with no commands to type.";
+  $("#guide-account p").textContent = "Click Add. The app downloads the selected provider’s tools on first use, with installation progress and a retry button if needed. ChatGPT provides a code to enter in your browser. For Claude and Google, the sign-in button opens the setup assistant in Terminal automatically, with no commands to type.";
   const dataHelp = $("#guide-data").querySelectorAll("p");
   dataHelp[0].textContent = "Requests are sent to the selected provider. Your accounts and keys stay on this Mac, in Library → Application Support → PocketRelay. Open this folder from the app menu.";
   dataHelp[1].textContent = "Quit the app before backing up this folder. Replacing the app during an update preserves your accounts. Docker has its own separate data.";
@@ -322,12 +322,11 @@ async function testAccount(a, btn) {
   const old = btn.lastChild.textContent;
   btn.lastChild.textContent = "Test…";
   try {
+    if (!await ensureTool(a.provider)) return;
     const r = await call(`/admin/api/accounts/${a.id}/test`, "POST");
     r.ok ? toast(`✓ ${a.label}: ${r.reply} in ${r.seconds} s (${r.model})`) : toast(`✗ ${a.label} : ${r.error}`, true);
   } catch (e) { toast(e.message, true); }
-  btn.disabled = false;
-  btn.lastChild.textContent = old;
-  refresh();
+  finally { btn.disabled = false; btn.lastChild.textContent = old; refresh(); }
 }
 
 // menu « ⋯ »
@@ -380,20 +379,77 @@ function prompt2(title, sub, value, onOk, secret = false) {
   d.onclose = () => { if (d.returnValue === "ok" && inp.value.trim()) act(() => onOk(inp.value.trim())); };
 }
 
+// Tool installation is managed by the local server, so it also works in a browser.
+async function ensureTool(provider) {
+  if (!S?.managed_tools) return true;
+  const status = await call(`/admin/api/tools?provider=${encodeURIComponent(provider)}`);
+  if (status.state === "ready") return true;
+  const label = { claude: "Claude", codex: "ChatGPT · Codex", antigravity: "Google · Antigravity" }[provider];
+  const title = h("h2", { id: "tool-install-title" }, `Installing ${label} tools…`);
+  const message = h("p", { role: "status", "aria-live": "polite" }, "Preparing download…");
+  const progress = h("progress", { max: 100, "aria-label": "Tool download progress", style: "width:100%" });
+  const retry = h("button", { class: "btn primary", type: "button", hidden: true }, "Retry installation");
+  const later = h("button", { class: "btn ghost", type: "button" }, "Continue later");
+  const d = h("dialog", { "aria-labelledby": "tool-install-title", style: "max-width:460px;padding:24px" },
+    title, message, progress,
+    h("p", { class: "hint" }, "Downloaded once from the provider's official source and kept on this Mac. No administrator password needed. You can close this dialog; installation continues while the app is open."),
+    h("div", { class: "actions" }, later, retry));
+  document.body.append(d);
+  return new Promise(resolve => {
+    let completed = false;
+    d.addEventListener("close", () => { d.remove(); resolve(completed); }, { once: true });
+    later.onclick = () => d.close();
+    const attempt = async () => {
+      retry.hidden = true; progress.hidden = false; progress.removeAttribute("value");
+      title.textContent = `Installing ${label} tools…`;
+      message.textContent = "Preparing download…";
+      try {
+        await call("/admin/api/tools", "POST", { provider });
+        while (d.open) {
+          const state = await call(`/admin/api/tools?provider=${encodeURIComponent(provider)}`);
+          if (!d.open) return;
+          if (state.state === "ready") { completed = true; d.close(); return; }
+          if (state.state === "error") throw new Error(state.error || "Installation failed. Please retry.");
+          if (state.state === "installing") {
+            progress.removeAttribute("value"); message.textContent = "Download verified. Installing tools…";
+          } else {
+            const total = Number(state.total), done = Number(state.downloaded || 0);
+            if (total > 0) {
+              const percent = Math.floor(done / total * 100);
+              progress.value = percent;
+              message.textContent = `Downloading tools… ${percent}% (${Math.round(done / 1048576)} / ${Math.round(total / 1048576)} MiB)`;
+            }
+          }
+          await new Promise(done => setTimeout(done, 700));
+        }
+      } catch (error) {
+        if (!d.open) return;
+        title.textContent = "Tools could not be installed";
+        message.textContent = error.message;
+        progress.hidden = true; retry.hidden = false;
+      }
+    };
+    retry.onclick = attempt;
+    d.showModal(); attempt();
+  });
+}
+
 // ---------- add account ----------
 let addProvider = "claude", loginPoll = null;
 document.querySelectorAll("[data-add]").forEach(b => (b.onclick = () => openAdd(b.dataset.add)));
 
-function openAdd(provider) {
+async function openAdd(provider) {
+  try { if (!await ensureTool(provider)) return; }
+  catch (e) { toast(e.message, true); return; }
   addProvider = provider;
   clearInterval(loginPoll);
   renderAddForm();
-  $("#dlg-add").showModal();
+  if (!$("#dlg-add").open) $("#dlg-add").showModal();
 }
 $("#dlg-add").addEventListener("close", () => { clearInterval(loginPoll); refresh(); });
 
 function segmented() {
-  const seg = (p, label, color) => h("button", { type: "button", class: addProvider === p ? "on" : "", onclick: () => { addProvider = p; renderAddForm(); } },
+  const seg = (p, label, color) => h("button", { type: "button", class: addProvider === p ? "on" : "", onclick: () => openAdd(p) },
     h("span", { class: "dotc", style: `background:var(--${color})` }), label);
   const tabs = [seg("claude", "Claude", "claude")];
   if (S.codex_enabled) tabs.push(seg("codex", "ChatGPT · Codex", "codex"));
@@ -421,7 +477,7 @@ function renderAddForm() {
     $("#add-body").replaceChildren(segmented(),
       h("ol", { class: "steps" },
         h("li", {}, desktop ? "Open the Claude setup assistant, then sign in through your browser:" : "Generate a token from a terminal in the project directory:",
-          desktop ? h("button", { class: "btn", type: "button", onclick: () => nativeAction("claudeToken") }, "Connect Claude on this Mac") :
+          desktop ? h("button", { class: "btn", type: "button", onclick: () => act(async () => { if (await ensureTool("claude")) nativeAction("claudeToken"); }) }, "Connect Claude on this Mac") :
           h("div", { class: "cmd" }, h("code", {}, "docker compose exec customremote claude setup-token"), h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy("docker compose exec customremote claude setup-token") }, icon("copy"))),
           h("p", { class: "hint" }, desktop ? "Terminal opens automatically. Copy the generated token and paste it below." : "Without Docker, on a machine with the CLI installed: claude setup-token.")),
         h("li", {}, "Paste the displayed token (it starts with sk-ant-):")),
@@ -502,7 +558,7 @@ function commandStep(account, command) {
     $("#add-sub").textContent = "Google setup opens in Terminal on your Mac.";
     $("#add-body").replaceChildren(
       h("p", {}, "Click below, follow the sign-in link, then return here. No commands to copy."),
-      h("button", { class: "btn primary", onclick: () => nativeAction("googleLogin", { account: account.id }) }, "Connect Google on this Mac"),
+      h("button", { class: "btn primary", onclick: () => act(async () => { if (await ensureTool("antigravity")) nativeAction("googleLogin", { account: account.id }); }) }, "Connect Google on this Mac"),
       h("p", { class: "hint" }, "Once signed in, use Test on the account card."));
     $("#add-foot").replaceChildren(h("button", { class: "btn", onclick: () => $("#dlg-add").close() }, "Done"));
     return;
@@ -520,12 +576,13 @@ function commandStep(account, command) {
 }
 
 async function antigravityLogin(a) {
-  try { commandStep(a, (await call(`/admin/api/accounts/${a.id}/login`, "POST")).command); $("#dlg-add").showModal(); }
+  try { if (!await ensureTool("antigravity")) return; commandStep(a, (await call(`/admin/api/accounts/${a.id}/login`, "POST")).command); $("#dlg-add").showModal(); }
   catch (e) { toast(e.message, true); }
 }
 
 
 async function codexLogin(a) {
+  try { if (!await ensureTool("codex")) return; } catch (e) { toast(e.message, true); return; }
   addProvider = "codex";
   $("#add-body").replaceChildren(h("div", { class: "waiting" }, h("span", { class: "spin" }), "Preparing code…"));
   $("#add-foot").replaceChildren();

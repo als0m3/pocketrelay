@@ -222,7 +222,7 @@ impl App {
                 .map(|a| store.public(a))
                 .collect::<Vec<_>>());
         }
-        json!({"user":user,"keys":store.public_keys(),"accounts":accounts,"stats":{"requests":self.requests.load(Ordering::Relaxed),"errors":self.errors.load(Ordering::Relaxed),"output_tokens":self.output_tokens.load(Ordering::Relaxed)},"codex_enabled":!self.config.codex.is_empty(),"antigravity_enabled":!self.config.antigravity.is_empty(),"deletable_system":crate::store::PROVIDERS.iter().filter(|p|!self.config.system_accounts.contains(&p.to_string())).collect::<Vec<_>>(),"models":self.catalog.lock().unwrap().clone(),"docs_enabled":self.config.docs,"require_account":self.config.require_account,"catalog_loading":self.catalog_busy.load(Ordering::Relaxed)})
+        json!({"user":user,"keys":store.public_keys(),"accounts":accounts,"stats":{"requests":self.requests.load(Ordering::Relaxed),"errors":self.errors.load(Ordering::Relaxed),"output_tokens":self.output_tokens.load(Ordering::Relaxed)},"managed_tools":self.config.managed_tools.is_some(),"codex_enabled":!self.config.codex.is_empty(),"antigravity_enabled":!self.config.antigravity.is_empty(),"deletable_system":crate::store::PROVIDERS.iter().filter(|p|!self.config.system_accounts.contains(&p.to_string())).collect::<Vec<_>>(),"models":self.catalog.lock().unwrap().clone(),"docs_enabled":self.config.docs,"require_account":self.config.require_account,"catalog_loading":self.catalog_busy.load(Ordering::Relaxed)})
     }
     pub async fn refresh_catalog(self: &Arc<Self>, force: bool) {
         if !force && now() - *self.catalog_at.lock().unwrap() < 60. {
@@ -248,7 +248,12 @@ impl App {
             .cloned()
             .collect::<Vec<_>>();
         let mut models = vec![];
-        if !self.config.codex.is_empty() {
+        let tools_ready = self
+            .config
+            .managed_tools
+            .as_ref()
+            .is_none_or(|tools| tools.status("codex").is_ok_and(|s| s["state"] == "ready"));
+        if !self.config.codex.is_empty() && tools_ready {
             for a in accounts {
                 let home = self.store.lock().unwrap().cli_home(&a, "codex");
                 let result = tokio::time::timeout(Duration::from_secs(8), async {

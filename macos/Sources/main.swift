@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }()
     var resources: URL { Bundle.main.resourceURL! }
     var tools: URL { resources.appendingPathComponent("bin") }
+    var providerTools: URL { data.appendingPathComponent("tools") }
     var port: Int { smoke ? 18789 : 8788 }
     var base: URL { URL(string: "http://localhost:\(port)")! }
     var server: Process?
@@ -118,13 +119,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func environment() -> [String: String] {
         // GUI launches don't inherit shell PATH. Never import provider credentials from the host.
         var env: [String: String] = [
-            "PATH": tools.path + ":/usr/bin:/bin:/usr/sbin:/sbin", "HOME": data.appendingPathComponent("home").path,
+            "PATH": providerTools.path + ":" + tools.path + ":/usr/bin:/bin:/usr/sbin:/sbin", "HOME": data.appendingPathComponent("home").path,
             "LANG": "en_US.UTF-8", "REMOTE_DATA": data.path, "REMOTE_STATIC": resources.appendingPathComponent("static").path,
             "REMOTE_HOST": "127.0.0.1", "REMOTE_PORT": String(port), "REMOTE_ENABLE_SESSIONS": "0",
             "REMOTE_SYSTEM_ACCOUNTS": "", "REMOTE_V1_ALLOW_MASTER": "0", "DISABLE_AUTOUPDATER": "1",
-            "CLAUDE_BIN": tools.appendingPathComponent("claude").path,
-            "CODEX_BIN": tools.appendingPathComponent("codex").path,
-            "ANTIGRAVITY_BIN": tools.appendingPathComponent("antigravity").path
+            "REMOTE_MANAGED_TOOLS": providerTools.path,
+            "CLAUDE_BIN": providerTools.appendingPathComponent("claude").path,
+            "CODEX_BIN": providerTools.appendingPathComponent("codex").path,
+            "ANTIGRAVITY_BIN": providerTools.appendingPathComponent("antigravity").path
         ]
         for key in ["TMPDIR", "USER", "LOGNAME"] { env[key] = ProcessInfo.processInfo.environment[key] }
         return env
@@ -419,7 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func openLoginTerminal(provider: String, account: String?) {
         let home = account.map { data.appendingPathComponent("accounts/\($0)/antigravity") } ?? data.appendingPathComponent("home")
         let script = data.appendingPathComponent(provider + "-login.command")
-        let command = "#!/bin/sh\nunset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY\nexport HOME=\(shellQuote(home.path))\nexport PATH=\(shellQuote(tools.path + ":/usr/bin:/bin:/usr/sbin:/sbin"))\nexport DISABLE_AUTOUPDATER=1\n\(shellQuote(tools.appendingPathComponent(provider).path))\(provider == "claude" ? " setup-token" : "")\nprintf '\\nReturn to Pocket Relay to finish connecting.\\n'\n"
+        let command = "#!/bin/sh\nunset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY\nexport HOME=\(shellQuote(home.path))\nexport PATH=\(shellQuote(providerTools.path + ":" + tools.path + ":/usr/bin:/bin:/usr/sbin:/sbin"))\nexport DISABLE_AUTOUPDATER=1\n\(shellQuote(providerTools.appendingPathComponent(provider).path))\(provider == "claude" ? " setup-token" : "")\nprintf '\\nReturn to Pocket Relay to finish connecting.\\n'\n"
         do {
             try fm.createDirectory(at: home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try command.write(to: script, atomically: true, encoding: .utf8)

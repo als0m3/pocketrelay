@@ -25,3 +25,7 @@ This app is ad hoc-signed without an Apple Developer ID and is not notarized.
 It is not an App Store app. Do not disable Gatekeeper globally.
 Download only from this repository's Releases and compare the SHA-256 checksum.
 Apple instructions: https://support.apple.com/102445
+
+On first use of a provider, the app downloads and verifies its tool automatically.
+An installation dialog shows progress and lets you retry if needed. Other provider tools
+are not downloaded. Installed tools are kept with your app data for later use.

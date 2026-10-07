@@ -172,6 +172,7 @@ impl CodexPool {
         std::fs::create_dir_all(&cwd)?;
         let mut env = config::clean_env(false);
         env.insert("CODEX_HOME".into(), home.to_string_lossy().into());
+        c.ensure_tool("codex").await?;
         let mut cmd = command(&c.codex, env);
         cmd.current_dir(cwd)
             .args(["app-server", "-c", "web_search=\"disabled\""]);
@@ -529,6 +530,7 @@ pub fn stream(app: Arc<App>, account: Value, p: Prompt) -> Output {
             if provider == "claude" && p.system.len() > 120 * 1024 {
                 Err(Error::new(400, "System instructions are too long (Claude limit: 120 KiB)."))?;
             }
+            app.config.ensure_tool(&provider).await?;
             let mut cmd = if provider == "claude" {
                 let token = app.store.lock().unwrap().token(&account);
                 let mut cmd = command(&app.config.claude, claude_env(token, false));

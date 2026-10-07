@@ -12,7 +12,7 @@ tool it invokes. Provider names identify integrations and do not imply affiliati
 - Docker: Debian, Poppler and their dependencies retain their respective licenses.
 - macOS app: Apple system frameworks; executable details in [macos/THIRD-PARTY.md](macos/THIRD-PARTY.md).
 
-Provider executables are not committed to this repository. Build scripts download or copy
-them during local builds. Building a package does not validate redistribution rights.
+Provider executables are not committed to this repository. Docker downloads them during builds;
+the Mac app downloads them on first use from pinned official sources. Building a package does not validate redistribution rights.
 Before distributing an image or DMG, review each bundled component's licenses, terms, notices
 and any source-distribution obligations. Account terms are separate from source-code licenses.

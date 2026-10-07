@@ -8,6 +8,7 @@ use tower::ServiceExt;
 fn fixture() -> (tempfile::TempDir, Arc<App>) {
     let dir = tempfile::tempdir().unwrap();
     let c = config::Config {
+        managed_tools: None,
         data: dir.path().into(),
         static_dir: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("static"),
         host: "127.0.0.1".into(),

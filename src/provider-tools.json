@@ -1,0 +1,48 @@
+{
+  "aarch64": {
+    "claude": {
+      "version": "2.1.289",
+      "url": "https://downloads.claude.ai/claude-code-releases/2.1.289/darwin-arm64/claude",
+      "sha256": "03d66745e3bb69ec727d66023696f3820bc0a00a8a5ba725eb6706d0c67cbe69",
+      "size": 229616464,
+      "member": null
+    },
+    "codex": {
+      "version": "0.155.1",
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-aarch64-apple-darwin.tar.gz",
+      "sha256": "5e5a51470dce2423f9d96bd191d0bbc4cc0e2848a6833df5178eaf47a07a3768",
+      "size": 90600719,
+      "member": "codex-aarch64-apple-darwin"
+    },
+    "antigravity": {
+      "version": "1.2.10",
+      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.2.10/agy_cli_mac_arm64.tar.gz",
+      "sha256": "95d5d8ab8870b849a157f647bb4d9953184f97855cbfbedebdedcc421ca5b435",
+      "size": 52941197,
+      "member": "antigravity"
+    }
+  },
+  "x86_64": {
+    "claude": {
+      "version": "2.1.289",
+      "url": "https://downloads.claude.ai/claude-code-releases/2.1.289/darwin-x64/claude",
+      "sha256": "358aa0e31666c48b2340ad9fa4003436105086ca12e1ecd4c5266d18598c2f7f",
+      "size": 238082176,
+      "member": null
+    },
+    "codex": {
+      "version": "0.155.1",
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-x86_64-apple-darwin.tar.gz",
+      "sha256": "ff22ad0bf28b8568dbfb28ef0ea64451fe5170fa0f9118bf764ca6cb24c27791",
+      "size": 98684755,
+      "member": "codex-x86_64-apple-darwin"
+    },
+    "antigravity": {
+      "version": "1.2.10",
+      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.2.10/agy_cli_mac_x64.tar.gz",
+      "sha256": "0b09a1d3a8c0df10a1090f99fb120eeff007dee53e7853f241a373f0194d5ca7",
+      "size": 57994696,
+      "member": "antigravity"
+    }
+  }
+}

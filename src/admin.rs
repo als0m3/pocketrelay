@@ -28,6 +28,7 @@ fn quote(s: &str) -> String {
 }
 async fn login_account(app: &Arc<App>, a: &Value) -> Result<Value> {
     let p = text(a, "provider");
+    app.config.ensure_tool(p).await?;
     let home = app.store.lock().unwrap().cli_home(a, p);
     if p == "antigravity" {
         std::fs::create_dir_all(&home)?;
@@ -161,6 +162,22 @@ pub async fn handle(
     let user = auth::current(c, &h, method != Method::GET)?;
     let v = match (method.as_str(), path) {
         ("GET", "/admin/api/state") => app.state(user),
+        ("GET", "/admin/api/tools") | ("POST", "/admin/api/tools") => {
+            let tools = c
+                .managed_tools
+                .as_ref()
+                .ok_or_else(|| Error::new(404, "Tools are managed outside this installation"))?;
+            let provider = if method == Method::GET {
+                q.get("provider").map(String::as_str).unwrap_or("")
+            } else {
+                text(&b, "provider")
+            };
+            if method == Method::POST {
+                tools.start(provider)?
+            } else {
+                tools.status(provider)?
+            }
+        }
         ("GET", "/admin/api/catalog") => {
             app.refresh_catalog(q.get("refresh").is_some_and(|v| v == "1"))
                 .await;
@@ -180,6 +197,7 @@ pub async fn handle(
             } else {
                 None
             };
+            app.config.ensure_tool(provider).await?;
             let a = app
                 .store
                 .lock()
