@@ -111,7 +111,7 @@ function renderSidebar() {
   const total = [...S.sessions.values()].reduce((a, s) => a + (s.cost_usd || 0), 0);
   $("#usage").textContent = `≈ $${total.toFixed(2)} API equivalent`;
   const waiting = [...S.sessions.values()].filter(s => s.pending?.length).length;
-  document.title = (waiting ? `(${waiting}) ` : "") + "PocketRelay";
+  document.title = (waiting ? `(${waiting}) ` : "") + "Pocket Relay";
 }
 
 function onSessionUpdate(s) {
@@ -686,7 +686,7 @@ $("#m-copy").onclick = () => {
 };
 $("#m-stop").onclick = async () => { await api(`/api/sessions/${S.current}/stop`, { method: "POST" }); $("#dlg-more").close(); };
 $("#m-delete").onclick = async () => {
-  if (!confirm("Delete this session from PocketRelay? (The CLI transcript stays in ~/.claude.)")) return;
+  if (!confirm("Delete this session from Pocket Relay? (The CLI transcript stays in ~/.claude.)")) return;
   await api(`/api/sessions/${S.current}`, { method: "DELETE" });
   $("#dlg-more").close();
 };

@@ -13,11 +13,11 @@ separate accounts and keys. Neither requires LiteLLM or an external database.
 
 The first downloadable package is an **Apple Silicon preview** (M-series Macs).
 There is no tested Intel DMG in this release. Open Apple menu → **About This Mac** to
-check your chip. See the [release notes](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.0)
+check your chip. See the [release notes](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.1)
 for the package's minimum macOS version and the system actually tested.
 
-1. Open the [v0.2.0 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.0).
-2. Under **Assets**, download `PocketRelay-0.2.0-arm64.dmg`. The GitHub “Source code”
+1. Open the [v0.2.1 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.2.1).
+2. Under **Assets**, download `PocketRelay-0.2.1-arm64.dmg`. The GitHub “Source code”
    archives are for developers; they are not the Mac installer.
 3. Open the DMG and drag **PocketRelay** onto **Applications**.
 4. Eject the disk image, then open PocketRelay from Applications.

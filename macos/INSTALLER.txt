@@ -1,9 +1,9 @@
-PocketRelay for macOS — Apple Silicon preview
+Pocket Relay for macOS — Apple Silicon preview
 
-1. Drag PocketRelay to Applications, then eject this disk image.
-2. Open PocketRelay from Applications.
+1. Drag Pocket Relay to Applications, then eject this disk image.
+2. Open Pocket Relay from Applications.
 3. If macOS blocks it, open System Settings > Privacy & Security,
-   scroll to the PocketRelay warning, choose Open Anyway and confirm.
+   scroll to the Pocket Relay warning, choose Open Anyway and confirm.
 4. Choose a username and password. Generate a password can create one for you;
    save it in your password manager before continuing.
 5. Connect a provider account, test it, create an API key and copy your

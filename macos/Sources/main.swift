@@ -133,9 +133,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let main = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Open PocketRelay", action: #selector(showWindow), keyEquivalent: "0").target = self
+        appMenu.addItem(withTitle: "Open Pocket Relay", action: #selector(showWindow), keyEquivalent: "0").target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit PocketRelay and stop the API", action: #selector(quit), keyEquivalent: "q").target = self
+        appMenu.addItem(withTitle: "Quit Pocket Relay and stop the API", action: #selector(quit), keyEquivalent: "q").target = self
         appItem.submenu = appMenu; main.addItem(appItem)
         let editItem = NSMenuItem(); let edit = NSMenu(title: "Edit")
         for (title, action, key) in [("Undo", "undo:", "z"), ("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select all", "selectAll:", "a")] {
@@ -143,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         editItem.submenu = edit; main.addItem(editItem); NSApp.mainMenu = main
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "PocketRelay")
+        statusItem.button?.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Pocket Relay")
         let menu = NSMenu()
         stateItem = NSMenuItem(title: "Preparing…", action: nil, keyEquivalent: ""); menu.addItem(stateItem)
         for (title, action) in [("Open console", #selector(showWindow)), ("Copy API address", #selector(copyAPI)), ("Open in browser", #selector(openBrowser)), ("Restart service", #selector(restart))] {
@@ -166,10 +166,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         web = WKWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = self; web.uiDelegate = self
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "PocketRelay — Local API: \(port)"
+        window.title = "Pocket Relay — Local API: \(port)"
         window.minSize = NSSize(width: 760, height: 560)
         window.contentView = web; window.delegate = self; window.isReleasedWhenClosed = false; window.center()
-        showStatus("Welcome to PocketRelay", "Connect your AI accounts and use them from your applications. The service keeps running when you close this window.")
+        showStatus("Welcome to Pocket Relay", "Connect your AI accounts and use them from your applications. The service keeps running when you close this window.")
     }
     func showStatus(_ title: String, _ message: String) {
         // Strings here are application-owned; process errors are displayed in native alerts.
@@ -202,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func setupAccount(first: Bool, validationError: String? = nil) {
         guard !setupRunning else { return }
         setupRunning = true; showWindow()
-        let a = NSAlert(); a.messageText = first ? "Set up access to PocketRelay" : "Change administrator access"
+        let a = NSAlert(); a.messageText = first ? "Set up access to Pocket Relay" : "Change administrator access"
         a.informativeText = validationError ?? "Choose a password with at least 12 characters. Your accounts and keys stay on this Mac."
         a.addButton(withTitle: first ? "Create and start" : "Save"); a.addButton(withTitle: "Cancel")
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
@@ -394,7 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
         guard isLocal(frame.request.url) else { completionHandler(false); return }
-        let dialog = NSAlert(); dialog.messageText = "PocketRelay"; dialog.informativeText = message
+        let dialog = NSAlert(); dialog.messageText = "Pocket Relay"; dialog.informativeText = message
         dialog.addButton(withTitle: "Confirm"); dialog.addButton(withTitle: "Cancel")
         dialog.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn) }
     }
@@ -419,7 +419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func openLoginTerminal(provider: String, account: String?) {
         let home = account.map { data.appendingPathComponent("accounts/\($0)/antigravity") } ?? data.appendingPathComponent("home")
         let script = data.appendingPathComponent(provider + "-login.command")
-        let command = "#!/bin/sh\nunset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY\nexport HOME=\(shellQuote(home.path))\nexport PATH=\(shellQuote(tools.path + ":/usr/bin:/bin:/usr/sbin:/sbin"))\nexport DISABLE_AUTOUPDATER=1\n\(shellQuote(tools.appendingPathComponent(provider).path))\(provider == "claude" ? " setup-token" : "")\nprintf '\\nReturn to PocketRelay to finish connecting.\\n'\n"
+        let command = "#!/bin/sh\nunset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY\nexport HOME=\(shellQuote(home.path))\nexport PATH=\(shellQuote(tools.path + ":/usr/bin:/bin:/usr/sbin:/sbin"))\nexport DISABLE_AUTOUPDATER=1\n\(shellQuote(tools.appendingPathComponent(provider).path))\(provider == "claude" ? " setup-token" : "")\nprintf '\\nReturn to Pocket Relay to finish connecting.\\n'\n"
         do {
             try fm.createDirectory(at: home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try command.write(to: script, atomically: true, encoding: .utf8)

@@ -22,7 +22,7 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::{net::SocketAddr, sync::Arc};
 #[derive(Parser)]
-#[command(version, about = "PocketRelay — standalone AI gateway")]
+#[command(version, about = "Pocket Relay — standalone AI gateway")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
             let listener =
                 tokio::net::TcpListener::bind((app.config.host.as_str(), app.config.port)).await?;
             println!(
-                "PocketRelay ready at http://{}:{} — console /admin",
+                "Pocket Relay ready at http://{}:{} — console /admin",
                 app.config.host, app.config.port
             );
             let router = router(app.clone());
@@ -285,7 +285,7 @@ async fn dispatch_inner(app: Arc<App>, request: Request) -> error::Result<Respon
             return Ok(Html(include_str!("../static/api-docs.html")).into_response());
         }
         if app.config.docs && path == "/openapi.json" {
-            return Ok(Json(json!({"openapi":"3.1.0","info":{"title":"PocketRelay","version":env!("CARGO_PKG_VERSION")},"components":{"securitySchemes":{"bearer":{"type":"http","scheme":"bearer"}}},"security":[{"bearer":[]}],"paths":{"/v1/models":{"get":{"responses":{"200":{"description":"Models by account"}}}},"/v1/chat/completions":{"post":{"responses":{"200":{"description":"JSON or SSE response"}}}},"/v1/responses":{"post":{"responses":{"200":{"description":"JSON or SSE response"}}}},"/v1/completions":{"post":{"responses":{"200":{"description":"JSON or SSE completion"}}}}}})).into_response());
+            return Ok(Json(json!({"openapi":"3.1.0","info":{"title":"Pocket Relay","version":env!("CARGO_PKG_VERSION")},"components":{"securitySchemes":{"bearer":{"type":"http","scheme":"bearer"}}},"security":[{"bearer":[]}],"paths":{"/v1/models":{"get":{"responses":{"200":{"description":"Models by account"}}}},"/v1/chat/completions":{"post":{"responses":{"200":{"description":"JSON or SSE response"}}}},"/v1/responses":{"post":{"responses":{"200":{"description":"JSON or SSE response"}}}},"/v1/completions":{"post":{"responses":{"200":{"description":"JSON or SSE completion"}}}}}})).into_response());
         }
     }
     let bytes = to_bytes(body, 64 * 1024 * 1024)

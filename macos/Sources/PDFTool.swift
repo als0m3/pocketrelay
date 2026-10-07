@@ -7,7 +7,7 @@ import AppKit
 func fail(_ message: String) -> Never { fputs(message + "\n", stderr); exit(1) }
 let args = Array(CommandLine.arguments.dropFirst())
 let tool = URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent
-if args == ["-v"] { print("PocketRelay PDFKit adapter 1.0"); exit(0) }
+if args == ["-v"] { print("Pocket Relay PDFKit adapter 1.0"); exit(0) }
 var path: String
 switch tool {
 case "pdfinfo":

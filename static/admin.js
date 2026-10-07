@@ -28,7 +28,7 @@ if (desktop) {
   const dataHelp = $("#guide-data").querySelectorAll("p");
   dataHelp[0].textContent = "Requests are sent to the selected provider. Your accounts and keys stay on this Mac, in Library → Application Support → PocketRelay. Open this folder from the app menu.";
   dataHelp[1].textContent = "Quit the app before backing up this folder. Replacing the app during an update preserves your accounts. Docker has its own separate data.";
-  $("#guide-connection").querySelectorAll("p")[1].textContent = "The API is available on this Mac while PocketRelay is open and the Mac is awake. Copy the address shown above. The app uses port 8788; Docker uses port 8787 by default.";
+  $("#guide-connection").querySelectorAll("p")[1].textContent = "The API is available on this Mac while Pocket Relay is open and the Mac is awake. Copy the address shown above. The app uses port 8788; Docker uses port 8787 by default.";
   $(".guide-grid").append(h("details", {}, h("summary", {}, "Does closing the window stop the API?"),
     h("p", {}, "No. The service keeps running in the menu bar. Choose Quit and stop the API to stop it. You can also enable Launch at login from that menu.")));
 }
