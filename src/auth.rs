@@ -5,7 +5,7 @@ use crate::{
 };
 use axum::http::{header, HeaderMap};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -29,8 +29,7 @@ fn password_hash(password: &str, salt: &str) -> Result<String> {
     scrypt::scrypt(
         password.as_bytes(),
         &salt,
-        &scrypt::Params::new(14, 8, 1, 64)
-            .map_err(|_| Error::new(500, "Invalid scrypt parameters"))?,
+        &scrypt::Params::new(14, 8, 1).map_err(|_| Error::new(500, "Invalid scrypt parameters"))?,
         &mut out,
     )
     .map_err(|_| Error::new(500, "Invalid hash"))?;
