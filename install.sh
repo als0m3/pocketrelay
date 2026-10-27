@@ -19,9 +19,9 @@ fi
 echo "1/3 · Building PocketRelay (the first run may take several minutes)…"
 docker compose build
 echo "2/3 · Creating your administrator account…"
-docker compose run --rm --no-deps customremote customremote setup --if-missing
+docker compose run --rm --no-deps pocketrelay pocketrelay setup --if-missing
 echo "3/3 · Starting…"
-docker compose up -d --wait
-published_address="$(docker compose port customremote 8787)"
+docker compose up -d --wait --remove-orphans
+published_address="$(docker compose port pocketrelay 8787)"
 echo "Ready! On this computer: http://localhost:${published_address##*:}/admin"
 echo "Sign in with your username and password, then follow the three steps shown."

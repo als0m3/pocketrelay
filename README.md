@@ -1,8 +1,34 @@
 # Pocket Relay
 
+> [!CAUTION]
+> **Educational and research project. Read this before using it.**
+>
+> - Pocket Relay is published for **educational, research and interoperability purposes only**,
+>   to study how AI command-line tools and OpenAI-compatible APIs work. It is not a commercial
+>   product, not a service, and not intended for production use.
+> - **Using a consumer subscription (Claude Pro/Max, ChatGPT, Google AI) through third-party
+>   software may violate the provider's terms of service.** Some providers explicitly prohibit it
+>   and have **suspended accounts** for it. Read your provider's current terms before connecting
+>   an account. When in doubt, don't.
+> - Do not use Pocket Relay to share, resell or pool subscriptions, to bypass usage limits, or
+>   for any unlawful purpose.
+> - You alone are responsible for how you use it, for your accounts and for compliance with the
+>   terms that apply to you. The software is provided **"as is", without warranty of any kind**;
+>   the author accepts no liability for account suspensions, data loss or any other damage.
+> - Not affiliated with, endorsed by or sponsored by Anthropic, OpenAI, Google or Apple. All
+>   trademarks belong to their owners.
+
 **A personal gateway that connects your applications to your AI accounts.**
 
-PocketRelay provides a web console, password-based administration and an API compatible
+<p align="center">
+  <img src="docs/media/console.gif" alt="Pocket Relay console: sign in, test an account and create an API key" width="800">
+</p>
+<p align="center">
+  <img src="docs/media/api.gif" alt="A Python OpenAI client streaming a reply through Pocket Relay" width="800">
+</p>
+<p align="center"><sub>Demo recorded locally with simulated providers; no real account was used.</sub></p>
+
+Pocket Relay provides a web console, password-based administration and an API compatible
 with part of the OpenAI protocol. It uses the Claude Code, Codex and Antigravity CLIs to
 forward requests to providers. **Models run at the provider, not on your computer**:
 you need an Internet connection and a compatible account.
@@ -103,16 +129,16 @@ The [configuration guide](docs/configuration.md) covers settings and common prob
 
 ## Need many keys? LiteLLM is optional
 
-PocketRelay can already create and revoke multiple keys. Its keys grant access to **all active
+Pocket Relay can already create and revoke multiple keys. Its keys grant access to **all active
 accounts**; they do not provide budgets or model-specific restrictions.
 
 For more advanced key and budget management, you can place a gateway such as LiteLLM in front:
-**applications → LiteLLM → PocketRelay → provider**. Create a dedicated PocketRelay key for
+**applications → LiteLLM → Pocket Relay → provider**. Create a dedicated Pocket Relay key for
 that gateway and configure models using their exact identifiers. This is an architectural
 option, not a project dependency.
 
 If multiple users share one upstream key, disable Responses history with
-`REMOTE_RESPONSES_MAX_MB=0`: PocketRelay otherwise sees them as one identity.
+`POCKETRELAY_RESPONSES_MAX_MB=0`: Pocket Relay otherwise sees them as one identity.
 Adding LiteLLM does not authorize subscription sharing or resale, or change provider terms.
 
 ## How it works and its limits
@@ -140,9 +166,9 @@ The [history notes](docs/history.md) explain the imported commits and cleanup be
 - [Build the macOS app](docs/macos.md)
 - [Third-party components](THIRD-PARTY.md)
 
-Original PocketRelay code is licensed under [MIT](LICENSE). Third-party components retain their
-own licenses and terms. The internal `customremote` name, `REMOTE_*` variables and existing key
-prefix are retained for technical compatibility.
+Original Pocket Relay code is licensed under [MIT](LICENSE). Third-party components retain their
+own licenses and terms. Legacy `REMOTE_*` variables and `sk-cr-` keys from earlier versions
+are still accepted.
 
 ## Author's note
 

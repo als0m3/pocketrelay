@@ -3,7 +3,7 @@
 import base64,hashlib,http.client,http.server,json,os,pathlib,socket,subprocess,tempfile,threading,time,urllib.parse
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def b64(v):return base64.urlsafe_b64encode(v).decode().rstrip('=')
-with tempfile.TemporaryDirectory(prefix='customremote-oidc-') as tmp:
+with tempfile.TemporaryDirectory(prefix='pocketrelay-oidc-') as tmp:
  path=pathlib.Path(tmp);key=path/'test.pem'
  subprocess.run(['openssl','genrsa','-out',str(key),'2048'],check=True,stderr=subprocess.DEVNULL)
  modulus=subprocess.check_output(['openssl','rsa','-in',str(key),'-noout','-modulus'],stderr=subprocess.DEVNULL).decode().split('=')[1].strip()
@@ -27,8 +27,8 @@ with tempfile.TemporaryDirectory(prefix='customremote-oidc-') as tmp:
  provider=http.server.ThreadingHTTPServer(('127.0.0.1',0),Provider);issuer=f'http://127.0.0.1:{provider.server_port}'
  threading.Thread(target=provider.serve_forever,daemon=True).start()
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
- env={**os.environ,'REMOTE_DATA':str(path/'data'),'REMOTE_PORT':str(port),'REMOTE_OIDC_ISSUER':issuer,'REMOTE_OIDC_CLIENT_ID':'client','REMOTE_ADMIN_GROUPS':'admins','REMOTE_ADMIN_EMAILS':'','REMOTE_PUBLIC_URL':'https://public.example.test','REMOTE_SYSTEM_ACCOUNTS':'','REMOTE_ENABLE_CODEX':'0','REMOTE_ENABLE_ANTIGRAVITY':'0'}
- proc=subprocess.Popen([str(ROOT/'target/release/customremote'),'serve'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ env={**os.environ,'POCKETRELAY_DATA':str(path/'data'),'POCKETRELAY_PORT':str(port),'POCKETRELAY_OIDC_ISSUER':issuer,'POCKETRELAY_OIDC_CLIENT_ID':'client','POCKETRELAY_ADMIN_GROUPS':'admins','POCKETRELAY_ADMIN_EMAILS':'','POCKETRELAY_PUBLIC_URL':'https://public.example.test','POCKETRELAY_SYSTEM_ACCOUNTS':'','POCKETRELAY_ENABLE_CODEX':'0','POCKETRELAY_ENABLE_ANTIGRAVITY':'0'}
+ proc=subprocess.Popen([str(ROOT/'target/release/pocketrelay'),'serve'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  def request(path,headers={},method='GET',body=None):
   c=http.client.HTTPConnection('127.0.0.1',port,timeout=5);c.request(method,path,body=json.dumps(body) if body is not None else None,headers=headers);r=c.getresponse();headers=dict(r.getheaders());headers['cookies']=[v for k,v in r.getheaders() if k.lower()=='set-cookie'];out=(r.status,headers,r.read());c.close();return out
  try:

@@ -1,6 +1,6 @@
 # Security
 
-PocketRelay is an experimental personal tool. Automated tests and secret scans are neither
+Pocket Relay is an experimental personal tool. Automated tests and secret scans are neither
 an independent audit nor a guarantee that the software is free of vulnerabilities.
 
 ## Trust boundaries
@@ -23,12 +23,12 @@ are private on Unix; the app creates its data directory with mode 0700. CLI cach
 also need protection by their owner.
 
 Web login uses a signed HttpOnly cookie. For an external HTTPS URL, configure
-`REMOTE_PUBLIC_URL` and `REMOTE_HTTPS=1`. Administrative mutations check the origin and a
+`POCKETRELAY_PUBLIC_URL` and `POCKETRELAY_HTTPS=1`. Administrative mutations check the origin and a
 dedicated header. `/v1` allows CORS and requires a key: any website that knows a key can use
 it; CORS is not an access-control mechanism for this API.
 
 In-memory Responses history is tied to an identity. Do not share one key between users who
-need isolation, or disable storage with `REMOTE_RESPONSES_MAX_MB=0`. Providers may retain
+need isolation, or disable storage with `POCKETRELAY_RESPONSES_MAX_MB=0`. Providers may retain
 content according to their own policies.
 
 ## Dependencies and publication

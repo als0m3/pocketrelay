@@ -246,15 +246,15 @@ pub async fn expand_documents(blocks: Vec<Value>) -> Result<Vec<Value>> {
                     .and_then(|s| s.trim().parse::<usize>().ok())
             })
             .ok_or_else(|| Error::new(400, "Cannot determine PDF page count"))?;
-        if pages > config::number("REMOTE_PDF_MAX_PAGES", 500) as usize {
+        if pages > config::number("POCKETRELAY_PDF_MAX_PAGES", 500) as usize {
             return Err(Error::new(400, "PDF exceeds the page limit"));
         }
         let bytes = pdf_command("pdftotext", &["-layout".into(), path.clone(), "-".into()]).await?;
         let extracted = String::from_utf8_lossy(&bytes);
         let texts: Vec<&str> = extracted.split('\x0c').take(pages).collect();
-        let mode = config::envs("REMOTE_PDF_MODE", "auto");
-        let max_images = config::number("REMOTE_PDF_MAX_IMAGE_PAGES", 20) as usize;
-        let max_chars = config::number("REMOTE_PDF_MAX_TEXT_CHARS", 400000) as usize;
+        let mode = config::envs("POCKETRELAY_PDF_MODE", "auto");
+        let max_images = config::number("POCKETRELAY_PDF_MAX_IMAGE_PAGES", 20) as usize;
+        let max_chars = config::number("POCKETRELAY_PDF_MAX_TEXT_CHARS", 400000) as usize;
         let mut rendered = vec![];
         let mut doc = format!("<document pages=\"{pages}\">\n");
         let mut used = 0;

@@ -413,3 +413,11 @@ fn jwt_dates_reject_malformed_and_future_claims() {
         assert_eq!(result.is_ok(), accepted, "{label}");
     }
 }
+
+#[test]
+fn legacy_remote_variables_are_read() {
+    std::env::set_var("REMOTE_LEGACY_FALLBACK_TEST", "old");
+    assert_eq!(config::envs("POCKETRELAY_LEGACY_FALLBACK_TEST", "x"), "old");
+    std::env::set_var("POCKETRELAY_LEGACY_FALLBACK_TEST", "new");
+    assert_eq!(config::envs("POCKETRELAY_LEGACY_FALLBACK_TEST", "x"), "new");
+}

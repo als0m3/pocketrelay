@@ -12,7 +12,7 @@ import urllib.request
 import urllib.error
 
 root = Path(__file__).resolve().parents[1]
-binary = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / 'target/release/customremote'
+binary = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / 'target/release/pocketrelay'
 if sys.platform != 'darwin':
     raise SystemExit('This optional download test requires macOS.')
 with tempfile.TemporaryDirectory(prefix='pocketrelay-tools-') as directory:
@@ -20,9 +20,9 @@ with tempfile.TemporaryDirectory(prefix='pocketrelay-tools-') as directory:
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
     env = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'HOME': directory, 'LANG': 'en_US.UTF-8',
-           'REMOTE_DATA': directory, 'REMOTE_STATIC': str(root / 'static'), 'REMOTE_HOST': '127.0.0.1',
-           'REMOTE_PORT': str(port), 'REMOTE_MANAGED_TOOLS': str(data / 'tools'),
-           'REMOTE_ENABLE_SESSIONS': '0', 'REMOTE_SYSTEM_ACCOUNTS': '', 'REMOTE_V1_ALLOW_MASTER': '0'}
+           'POCKETRELAY_DATA': directory, 'POCKETRELAY_STATIC': str(root / 'static'), 'POCKETRELAY_HOST': '127.0.0.1',
+           'POCKETRELAY_PORT': str(port), 'POCKETRELAY_MANAGED_TOOLS': str(data / 'tools'),
+           'POCKETRELAY_ENABLE_SESSIONS': '0', 'POCKETRELAY_SYSTEM_ACCOUNTS': '', 'POCKETRELAY_V1_ALLOW_MASTER': '0'}
     base = f'http://127.0.0.1:{port}'
     cookie = ''
     def request(path, body=None, auth=True, csrf=True, expected=200):

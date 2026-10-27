@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     let fm = FileManager.default
     let smoke = CommandLine.arguments.contains("--smoke-test")
     lazy var data: URL = {
-        if smoke { return fm.temporaryDirectory.appendingPathComponent("customremote-app-qa-\(UUID().uuidString)") }
+        if smoke { return fm.temporaryDirectory.appendingPathComponent("pocketrelay-app-qa-\(UUID().uuidString)") }
         return fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PocketRelay")
     }()
     var resources: URL { Bundle.main.resourceURL! }
@@ -120,10 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // GUI launches don't inherit shell PATH. Never import provider credentials from the host.
         var env: [String: String] = [
             "PATH": providerTools.path + ":" + tools.path + ":/usr/bin:/bin:/usr/sbin:/sbin", "HOME": data.appendingPathComponent("home").path,
-            "LANG": "en_US.UTF-8", "REMOTE_DATA": data.path, "REMOTE_STATIC": resources.appendingPathComponent("static").path,
-            "REMOTE_HOST": "127.0.0.1", "REMOTE_PORT": String(port), "REMOTE_ENABLE_SESSIONS": "0",
-            "REMOTE_SYSTEM_ACCOUNTS": "", "REMOTE_V1_ALLOW_MASTER": "0", "DISABLE_AUTOUPDATER": "1",
-            "REMOTE_MANAGED_TOOLS": providerTools.path,
+            "LANG": "en_US.UTF-8", "POCKETRELAY_DATA": data.path, "POCKETRELAY_STATIC": resources.appendingPathComponent("static").path,
+            "POCKETRELAY_HOST": "127.0.0.1", "POCKETRELAY_PORT": String(port), "POCKETRELAY_ENABLE_SESSIONS": "0",
+            "POCKETRELAY_SYSTEM_ACCOUNTS": "", "POCKETRELAY_V1_ALLOW_MASTER": "0", "DISABLE_AUTOUPDATER": "1",
+            "POCKETRELAY_MANAGED_TOOLS": providerTools.path,
             "CLAUDE_BIN": providerTools.appendingPathComponent("claude").path,
             "CODEX_BIN": providerTools.appendingPathComponent("codex").path,
             "ANTIGRAVITY_BIN": providerTools.appendingPathComponent("antigravity").path
@@ -164,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func buildWindow() {
         let configuration = WKWebViewConfiguration()
         if smoke { configuration.websiteDataStore = .nonPersistent() }
-        configuration.userContentController.add(self, name: "customremote")
+        configuration.userContentController.add(self, name: "pocketrelay")
         web = WKWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = self; web.uiDelegate = self
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -241,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
     func configure(username: String, password: String, onlyMissing: Bool, done: @escaping (Bool) -> Void) {
-        let p = Process(); p.executableURL = tools.appendingPathComponent("customremote")
+        let p = Process(); p.executableURL = tools.appendingPathComponent("pocketrelay")
         p.arguments = ["setup", "--json-stdin"] + (onlyMissing ? ["--if-missing"] : [])
         p.environment = environment()
         let input = Pipe(); let output = Pipe(); p.standardInput = input; p.standardOutput = output; p.standardError = output
@@ -262,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard server?.isRunning != true else { return }
         ready = false; stateItem.title = "Starting…"; launchTime = Date()
         showStatus("Starting the service…", "Your API will be available at <b>http://localhost:\(port)/v1</b>.")
-        let p = Process(); p.executableURL = tools.appendingPathComponent("customremote")
+        let p = Process(); p.executableURL = tools.appendingPathComponent("pocketrelay")
         p.arguments = ["serve", "--exit-on-stdin-close"]; p.environment = environment(); p.currentDirectoryURL = data
         let pipe = Pipe(); p.standardInput = pipe; parentPipe = pipe
         do {
@@ -385,7 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 const key = await created.json();
                 if (!created.ok || !key.key) throw Error('WebKit key creation failed');
                 const models = await fetch('/v1/models', {headers: {Authorization:'Bearer ' + key.key}});
-                return models.ok && Boolean(document.querySelector('#password-form') && window.webkit.messageHandlers.customremote);
+                return models.ok && Boolean(document.querySelector('#password-form') && window.webkit.messageHandlers.pocketrelay);
                 """, arguments: ["testPassword": smokePassword], in: nil, in: .page) { result in
                 switch result {
                 case .success(let value): self.finishSmoke((value as? Bool) == true)

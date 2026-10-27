@@ -259,7 +259,7 @@ impl Store {
         if a["system"] == true && c.system_accounts.contains(&text(&a, "provider").into()) {
             return Err(Error::new(
                 400,
-                "Remove this provider from REMOTE_SYSTEM_ACCOUNTS before deleting the account.",
+                "Remove this provider from POCKETRELAY_SYSTEM_ACCOUNTS before deleting the account.",
             ));
         }
         self.accounts.retain(|v| v["id"] != a["id"]);
@@ -357,7 +357,7 @@ impl Store {
                 <= now()
     }
     pub fn create_key(&mut self, name: &str) -> Result<Value> {
-        let key = format!("sk-cr-{}", config::random(32));
+        let key = format!("sk-pr-{}", config::random(32));
         let item = json!({"id":config::random(6),"name":if name.trim().is_empty(){"untitled"}else{name.trim()},"prefix":format!("{}…{}",&key[..10],&key[key.len()-4..]),"hash":hash(&key),"created":now(),"last_used":null,"requests":0,"revoked":false});
         self.keys.push(item.clone());
         self.flush()?;

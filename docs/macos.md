@@ -1,6 +1,6 @@
 # Optional macOS app
 
-The app is another way to use PocketRelay, with a native window and menu bar icon. It bundles
+The app is another way to use Pocket Relay, with a native window and menu bar icon. It bundles
 the Rust server and reuses the existing web console. Docker remains a separate option.
 An Apple Silicon preview is available in the
 [v0.3.1 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.1), with a checksum.
@@ -40,7 +40,7 @@ Console: `http://localhost:8788/admin`; API: `http://localhost:8788/v1`.
 Data: `~/Library/Application Support/PocketRelay`. Docker uses port 8787 and its own volume.
 Accounts and keys are not shared automatically. Port 8788 must be free; the app does not
 take control of an unknown server already using it. An older app with another name may use
-the same port: quit it before starting PocketRelay. Its data is not migrated automatically.
+the same port: quit it before starting Pocket Relay. Its data is not migrated automatically.
 
 Quit the app before backing up its data directory. Replacing the app does not delete data.
 Removing it from Applications does not remove that directory either. Manually deleting the
@@ -87,7 +87,7 @@ See [third-party tools](../macos/THIRD-PARTY.md) for sources and applicable noti
 ```bash
 python3 tests/desktop.py
 # Optional online test: downloads all three tools into temporary data, without signing in
-python3 tests/tools_download.py target/release/customremote
+python3 tests/tools_download.py target/release/pocketrelay
 python3 macos/scripts/verify.py dist/macos/PocketRelay.app
 dist/macos/PocketRelay.app/Contents/MacOS/PocketRelay --smoke-test
 python3 macos/scripts/test-dmg.py dist/macos/PocketRelay-arm64.dmg
@@ -100,8 +100,8 @@ provider calls.
 
 The DMG test mounts the volume read-only, copies the app to a path containing spaces, ejects
 the volume and tests the copy. It reports functional results separately from Gatekeeper:
-functional success does not imply macOS acceptance. The report stays at
-`/tmp/customremote-dmg-test.json` for script compatibility.
+functional success does not imply macOS acceptance. The report is written to
+`/tmp/pocketrelay-dmg-test.json`.
 
 Release notes record the exact package, tested operating system and functional checks.
 The initial Apple Silicon preview is tested on the release machine; a deployment target

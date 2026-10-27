@@ -176,7 +176,7 @@ pub fn check_origin(c: &Config, h: &HeaderMap) -> Result<()> {
     Ok(())
 }
 pub fn local_allowed(c: &Config, h: &HeaderMap) -> bool {
-    if config::envs("REMOTE_OIDC_ISSUER", "").is_empty() {
+    if config::envs("POCKETRELAY_OIDC_ISSUER", "").is_empty() {
         return true;
     }
     let public = url::Url::parse(&c.public_url)
@@ -207,7 +207,7 @@ impl Auth {
         let configured = !record(c)?.is_null();
         let allowed = local_allowed(c, h);
         Ok(
-            json!({"oidc":!config::envs("REMOTE_OIDC_ISSUER","").is_empty(),"token_login":allowed,"password_login":allowed&&configured,"setup_needed":allowed&&!configured,"user":user(c,h)}),
+            json!({"oidc":!config::envs("POCKETRELAY_OIDC_ISSUER","").is_empty(),"token_login":allowed,"password_login":allowed&&configured,"setup_needed":allowed&&!configured,"user":user(c,h)}),
         )
     }
     pub fn throttle(&self, peer: &str) -> Result<()> {
@@ -279,7 +279,7 @@ impl Auth {
                 return Ok(v.clone());
             }
         }
-        let issuer = config::envs("REMOTE_OIDC_ISSUER", "")
+        let issuer = config::envs("POCKETRELAY_OIDC_ISSUER", "")
             .trim_end_matches('/')
             .to_string();
         if issuer.is_empty() {
@@ -336,7 +336,7 @@ impl Auth {
             .map_err(|_| Error::new(502, "Invalid OIDC URL"))?;
         url.query_pairs_mut().extend_pairs([
             ("response_type", "code"),
-            ("client_id", &config::envs("REMOTE_OIDC_CLIENT_ID", "")),
+            ("client_id", &config::envs("POCKETRELAY_OIDC_CLIENT_ID", "")),
             ("redirect_uri", &redirect),
             ("scope", "openid email profile"),
             ("state", &state),
@@ -374,7 +374,7 @@ impl Auth {
             .get("code")
             .ok_or_else(|| Error::new(403, "SSO login canceled"))?;
         let d = self.discover(client).await?;
-        let client_id = config::envs("REMOTE_OIDC_CLIENT_ID", "");
+        let client_id = config::envs("POCKETRELAY_OIDC_CLIENT_ID", "");
         let tokens: Value = client
             .post(text(&d, "token_endpoint"))
             .form(&[
@@ -385,7 +385,7 @@ impl Auth {
                 ("client_id", &client_id),
                 (
                     "client_secret",
-                    &config::envs("REMOTE_OIDC_CLIENT_SECRET", ""),
+                    &config::envs("POCKETRELAY_OIDC_CLIENT_SECRET", ""),
                 ),
             ])
             .send()
@@ -431,8 +431,8 @@ impl Auth {
             return Err(Error::new(403, "Invalid SSO nonce"));
         }
         let email = text(&claims, "email").to_lowercase();
-        let emails = config::envs("REMOTE_ADMIN_EMAILS", "");
-        let groups = config::envs("REMOTE_ADMIN_GROUPS", "");
+        let emails = config::envs("POCKETRELAY_ADMIN_EMAILS", "");
+        let groups = config::envs("POCKETRELAY_ADMIN_GROUPS", "");
         let mut roles: Vec<String> = Vec::new();
         for v in [
             &claims["groups"],

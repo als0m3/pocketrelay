@@ -111,7 +111,7 @@ impl App {
             catalog_at: Mutex::new(0.),
             catalog_busy: AtomicBool::new(false),
             responses: Mutex::new(Memory::new(
-                config::number("REMOTE_RESPONSES_MAX_MB", 64) as usize * 1024 * 1024,
+                config::number("POCKETRELAY_RESPONSES_MAX_MB", 64) as usize * 1024 * 1024,
             )),
             rates: Mutex::default(),
             sessions,
@@ -127,7 +127,7 @@ impl App {
             .or_else(|| h.get("x-api-key").and_then(|v| v.to_str().ok()))
             .unwrap_or("");
         if !key.is_empty()
-            && config::flag("REMOTE_V1_ALLOW_MASTER", true)
+            && config::flag("POCKETRELAY_V1_ALLOW_MASTER", true)
             && crate::store::equal(key, &self.config.token)
         {
             return Ok(json!({"master":true}));
@@ -143,14 +143,14 @@ impl App {
             return ("master".into(), true);
         }
         let default = (format!("key:{}", text(ident, "key_id")), false);
-        let names = config::envs("REMOTE_FORWARDER_KEY_NAME", "open-webui");
+        let names = config::envs("POCKETRELAY_FORWARDER_KEY_NAME", "open-webui");
         if !names
             .split(',')
             .any(|s| s.trim() == text(ident, "key_name"))
         {
             return default;
         }
-        let secret = config::envs("REMOTE_FORWARD_JWT_SECRET", "");
+        let secret = config::envs("POCKETRELAY_FORWARD_JWT_SECRET", "");
         let Some(token) = h.get("x-openwebui-user-jwt").and_then(|v| v.to_str().ok()) else {
             return default;
         };
@@ -178,14 +178,14 @@ impl App {
         (format!("owui:{subject}"), c["role"] == "admin")
     }
     pub fn admit(&self, owner: &str, exempt: bool, cost: usize) -> Result<()> {
-        let rate = config::envs("REMOTE_USER_RATE", "200/h");
+        let rate = config::envs("POCKETRELAY_USER_RATE", "200/h");
         if exempt || rate.is_empty() || rate == "0" {
             return Ok(());
         }
         let (n, period) = rate.split_once('/').unwrap_or((&rate, "h"));
         let n = n
             .parse::<usize>()
-            .map_err(|_| Error::new(500, "Invalid REMOTE_USER_RATE"))?;
+            .map_err(|_| Error::new(500, "Invalid POCKETRELAY_USER_RATE"))?;
         let secs = match period {
             "m" => 60.,
             "d" => 86400.,
@@ -284,7 +284,7 @@ impl App {
 fn initial_catalog(c: &Config) -> Value {
     let mut models = json!({"claude":[{"id":"opus","name":"Opus"},{"id":"sonnet","name":"Sonnet"},{"id":"haiku","name":"Haiku"},{"id":"fable","name":"Fable"}],"codex":[],"antigravity":[]});
     if !c.antigravity.is_empty() {
-        models["antigravity"] = if let Ok(custom) = std::env::var("REMOTE_ANTIGRAVITY_MODELS") {
+        models["antigravity"] = if let Ok(custom) = config::var("POCKETRELAY_ANTIGRAVITY_MODELS") {
             json!(custom
                 .split(',')
                 .map(str::trim)

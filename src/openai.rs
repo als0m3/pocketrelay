@@ -47,7 +47,7 @@ pub async fn resolve(app: &Arc<App>, input: &str) -> Result<Model> {
         }
     }
     if m.is_empty() && !app.config.require_account {
-        m = config::envs("REMOTE_OAI_MODEL", "sonnet");
+        m = config::envs("POCKETRELAY_OAI_MODEL", "sonnet");
     }
     let provider = if m.starts_with("claude")
         || ["opus", "sonnet", "haiku", "fable", "default", "opusplan"]
@@ -96,7 +96,7 @@ pub async fn resolve(app: &Arc<App>, input: &str) -> Result<Model> {
             .into();
         } else {
             provider = "claude".into();
-            m = config::envs("REMOTE_OAI_MODEL", "sonnet");
+            m = config::envs("POCKETRELAY_OAI_MODEL", "sonnet");
         }
     }
     if app.config.require_account && pinned.is_none() {
@@ -173,7 +173,7 @@ pub fn run(app: Arc<App>, model: Model, mut p: Prompt) -> Output {
             })?;
             let aid = text(&account, "id").to_owned();
             tried.push(aid.clone());
-            let queue = Duration::from_secs(config::number("REMOTE_QUEUE_TIMEOUT", 120));
+            let queue = Duration::from_secs(config::number("POCKETRELAY_QUEUE_TIMEOUT", 120));
             let permit = tokio::time::timeout_at(
                 deadline.min(tokio::time::Instant::now() + queue),
                 app.sem.clone().acquire_owned(),
@@ -204,7 +204,7 @@ pub fn run(app: Arc<App>, model: Model, mut p: Prompt) -> Output {
                         started = true;
                         output_bytes += t.len();
                         if output_bytes
-                            > config::number("REMOTE_MAX_OUTPUT_MB", 16) as usize * 1024 * 1024
+                            > config::number("POCKETRELAY_MAX_OUTPUT_MB", 16) as usize * 1024 * 1024
                         {
                             error =
                                 Some(Error::new(502, "Provider response is too large"));
@@ -257,7 +257,7 @@ pub async fn models(app: &Arc<App>) -> Value {
             _ => "google",
         };
         let entry = |mid: String, name: String| json!({"id":mid,"name":name,"object":"model","created":now() as u64,"owned_by":owner});
-        if !app.config.require_account && config::flag("REMOTE_MODELS_AUTO", true) {
+        if !app.config.require_account && config::flag("POCKETRELAY_MODELS_AUTO", true) {
             for m in &ms {
                 data.push(entry(
                     text(m, "id").into(),
@@ -265,7 +265,7 @@ pub async fn models(app: &Arc<App>) -> Value {
                 ));
             }
         }
-        if config::flag("REMOTE_MODELS_PER_ACCOUNT", true) {
+        if config::flag("POCKETRELAY_MODELS_PER_ACCOUNT", true) {
             for a in accounts
                 .iter()
                 .filter(|a| text(a, "provider") == p && a["enabled"] == true)
@@ -349,7 +349,7 @@ pub async fn handle(
     if method == Method::GET && path.starts_with("models/") {
         let name = path.trim_start_matches("models/");
         return Ok(Json(
-            json!({"id":name,"object":"model","created":now() as u64,"owned_by":"customremote"}),
+            json!({"id":name,"object":"model","created":now() as u64,"owned_by":"pocketrelay"}),
         )
         .into_response());
     }

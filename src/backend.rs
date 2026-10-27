@@ -94,7 +94,7 @@ pub fn claude_env(token: Option<String>, full: bool) -> HashMap<String, String> 
     ] {
         env.remove(k);
     }
-    if !config::flag("REMOTE_KEEP_API_KEY", false) {
+    if !config::flag("POCKETRELAY_KEEP_API_KEY", false) {
         env.remove("ANTHROPIC_AUTH_TOKEN");
         env.remove("ANTHROPIC_API_KEY");
     }

@@ -12,12 +12,12 @@ import time
 import urllib.request
 
 root = Path(__file__).resolve().parents[1]
-binary = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / 'target/release/customremote'
-with tempfile.TemporaryDirectory(prefix='customremote-desktop-') as directory:
+binary = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / 'target/release/pocketrelay'
+with tempfile.TemporaryDirectory(prefix='pocketrelay-desktop-') as directory:
     data = Path(directory)
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-    env = {**os.environ, 'REMOTE_DATA': directory, 'REMOTE_PORT': str(port), 'REMOTE_HOST': '127.0.0.1', 'REMOTE_SYSTEM_ACCOUNTS': '', 'REMOTE_ENABLE_SESSIONS': '0', 'REMOTE_V1_ALLOW_MASTER': '0'}
+    env = {**os.environ, 'POCKETRELAY_DATA': directory, 'POCKETRELAY_PORT': str(port), 'POCKETRELAY_HOST': '127.0.0.1', 'POCKETRELAY_SYSTEM_ACCOUNTS': '', 'POCKETRELAY_ENABLE_SESSIONS': '0', 'POCKETRELAY_V1_ALLOW_MASTER': '0'}
     def setup(payload, *extra, expected=0):
         result = subprocess.run([str(binary), 'setup', '--json-stdin', *extra], input=payload, env=env, capture_output=True, timeout=10)
         assert result.returncode == expected, result.stderr

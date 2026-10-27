@@ -2,7 +2,7 @@
 """HTTP tests with real subprocesses simulating all three CLIs. Python standard library only."""
 import base64, hashlib, http.client, json, os, pathlib, socket, subprocess, sys, tempfile, time, urllib.request, urllib.error
 ROOT=pathlib.Path(__file__).resolve().parents[1]
-BINARY=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'target/release/customremote'
+BINARY=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'target/release/pocketrelay'
 checks=0
 
 def verify(ok, label):
@@ -11,14 +11,14 @@ def verify(ok, label):
     checks+=1
     print('OK', label, flush=True)
 
-with tempfile.TemporaryDirectory(prefix='customremote-integration-') as tmp:
+with tempfile.TemporaryDirectory(prefix='pocketrelay-integration-') as tmp:
     data=pathlib.Path(tmp)
     with socket.socket() as sock: sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     base=f'http://127.0.0.1:{port}'
     salt='00'*16
     (data/'admin.json').write_text(json.dumps({'username':'admin','salt':salt,'hash':hashlib.scrypt(b'fixture-password-2026',salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex(),'revision':'python-record'}))
     fixture=str(ROOT/'tests/fixtures/cli.py')
-    env={**os.environ,'REMOTE_DATA':tmp,'REMOTE_PORT':str(port),'REMOTE_SYSTEM_ACCOUNTS':'claude,codex,antigravity','REMOTE_TOKEN':'fixture-master','CLAUDE_BIN':fixture,'CODEX_BIN':fixture,'ANTIGRAVITY_BIN':fixture,'CODEX_HOME':str(data/'codex'),'ANTIGRAVITY_HOME':str(data/'antigravity'),'REMOTE_ENABLE_SESSIONS':'1','REMOTE_USER_RATE':'200/h','REMOTE_REQUEST_TIMEOUT':'2'}
+    env={**os.environ,'POCKETRELAY_DATA':tmp,'POCKETRELAY_PORT':str(port),'POCKETRELAY_SYSTEM_ACCOUNTS':'claude,codex,antigravity','POCKETRELAY_TOKEN':'fixture-master','CLAUDE_BIN':fixture,'CODEX_BIN':fixture,'ANTIGRAVITY_BIN':fixture,'CODEX_HOME':str(data/'codex'),'ANTIGRAVITY_HOME':str(data/'antigravity'),'POCKETRELAY_ENABLE_SESSIONS':'1','POCKETRELAY_USER_RATE':'200/h','POCKETRELAY_REQUEST_TIMEOUT':'2'}
     log=open(data/'server.log','w+')
     proc=subprocess.Popen([str(BINARY),'serve'],cwd=ROOT,env=env,stdout=log,stderr=log)
     cookie=''

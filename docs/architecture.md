@@ -15,7 +15,7 @@ into JSON or SSE. Errors and quotas do not silently redirect a request to anothe
 
 Claude receives JSON messages over stdin. Codex uses its app-server over JSON-RPC;
 Antigravity uses its CLI. These interfaces and their terms can change independently of
-PocketRelay. This project is not an inference server and contains no model weights.
+Pocket Relay. This project is not an inference server and contains no model weights.
 
 ## Available API
 
@@ -48,7 +48,7 @@ own authentication files or caches. See [security](../SECURITY.md).
 
 Responses context is kept in memory (up to 64 MiB and 500 entries by default), tied to the
 request identity, and lost on restart or eviction. `store: false` prevents saving an entry;
-`REMOTE_RESPONSES_MAX_MB=0` disables it globally. Clients sharing one key are not isolated
+`POCKETRELAY_RESPONSES_MAX_MB=0` disables it globally. Clients sharing one key are not isolated
 from one another.
 
 Global request and token counters reset at startup. They are not a billing system.

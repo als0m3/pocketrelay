@@ -16,7 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
 parser.add_argument('dmg', type=Path)
-parser.add_argument('--report', type=Path, default=Path('/tmp/customremote-dmg-test.json'))
+parser.add_argument('--report', type=Path, default=Path('/tmp/pocketrelay-dmg-test.json'))
 args = parser.parse_args()
 dmg = args.dmg.resolve()
 report = {'dmg': str(dmg), 'sha256': hashlib.sha256(dmg.read_bytes()).hexdigest(), 'checks': []}
@@ -35,7 +35,7 @@ def run(label, command, timeout=90, allowed=(0,)):
 
 
 run('DMG checksum', ['hdiutil', 'verify', dmg])
-with tempfile.TemporaryDirectory(prefix='customremote-dmg-') as directory:
+with tempfile.TemporaryDirectory(prefix='pocketrelay-dmg-') as directory:
     temp = Path(directory)
     mount = temp / 'Volume'
     destination = temp / 'Applications with spaces' / 'PocketRelay.app'
@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='customremote-dmg-') as directory:
             probe.settimeout(1)
             assert probe.connect_ex(('127.0.0.1', 18789)) != 0, 'Test port still has a listener'
         report['native_service_stopped'] = True
-        binary = destination / 'Contents/Resources/bin/customremote'
+        binary = destination / 'Contents/Resources/bin/pocketrelay'
         run('Desktop setup, persistence and parent-process lifecycle', ['python3', ROOT / 'tests/desktop.py', binary])
         # The integration suite inherits this PATH for PDF commands; providers themselves are fixtures.
         import os

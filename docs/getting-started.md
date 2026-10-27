@@ -1,4 +1,4 @@
-# Get started with PocketRelay
+# Get started with Pocket Relay
 
 Connect one of your AI accounts, create a gateway key, and use its models from an
 OpenAI-compatible application. Models run at the provider; keep an Internet connection
@@ -41,7 +41,7 @@ the app interrupts it. The next attempt restarts an incomplete download. Downloa
 does not connect your account or generate model usage. A provider's tool can use approximately
 180–240 MB of disk space; the app stays small if you only use one provider.
 
-Existing accounts from PocketRelay 0.2.x are preserved. Their tools install when you next use
+Existing accounts from Pocket Relay 0.2.x are preserved. Their tools install when you next use
 them. Docker still includes its provider tools and does not use this installer.
 
 #### If macOS blocks the first launch
@@ -82,7 +82,7 @@ cd pocketrelay
 ```
 
 The installer builds the image, asks you to create an administrator account and starts
-PocketRelay. The first build can take several minutes. Open **http://localhost:8787/admin**
+Pocket Relay. The first build can take several minutes. Open **http://localhost:8787/admin**
 and sign in. On later runs, the installer preserves your existing administrator account.
 
 ## 2. Connect one provider account
@@ -95,14 +95,14 @@ You only need one provider to get started.
 
 1. In the Mac app, click **Connect Claude on this Mac**. Terminal opens the downloaded
    setup assistant; complete the provider's sign-in flow in your browser.
-2. Copy the generated `sk-ant-…` subscription token and paste it into PocketRelay's
+2. Copy the generated `sk-ant-…` subscription token and paste it into Pocket Relay's
    **Token** field. Keep this token private.
 3. Enter an account name and click **Add**. The console tests the account.
 
 With Docker, the dialog gives you this command to run from the repository directory:
 
 ```bash
-docker compose exec customremote claude setup-token
+docker compose exec pocketrelay claude setup-token
 ```
 
 Then paste the returned token into the console as above.
@@ -111,7 +111,7 @@ Then paste the returned token into the console as above.
 
 1. Click **Add** under **ChatGPT · Codex**, name the account and click **Continue**.
 2. Open the sign-in link displayed by the console in your browser and enter its device code.
-3. Complete the provider authorization. Return to PocketRelay and wait for confirmation.
+3. Complete the provider authorization. Return to Pocket Relay and wait for confirmation.
 4. Click **Test** on the account card.
 
 This connects the server's own Codex account; it does not import credentials from another
@@ -123,7 +123,7 @@ provider's on-screen instructions.
 1. Click **Add** under **Google · Antigravity**, name the account and click **Continue**.
 2. In the Mac app, use the button to open the connection assistant in Terminal.
    With Docker, copy and run the exact command displayed by the console.
-3. Complete the browser/terminal authorization, then return to PocketRelay and click **Test**.
+3. Complete the browser/terminal authorization, then return to Pocket Relay and click **Test**.
 
 Google sign-in needs an interactive terminal. Do not substitute a command for another
 account: each account has its own credential directory.
@@ -135,15 +135,15 @@ permission to bypass provider terms or share subscriptions.
 ## 3. Create a key for your application
 
 Under **API keys**, enter the application name and click **Create a key**.
-Copy the `sk-cr-…` key immediately and save it securely; it is displayed only once.
+Copy the `sk-pr-…` key immediately and save it securely; it is displayed only once.
 
 These three credentials have different purposes:
 
 | Credential | Purpose |
 |---|---|
-| PocketRelay username and password | Sign in to the administration console |
-| Provider account or subscription token | Let PocketRelay contact that provider |
-| PocketRelay `sk-cr-…` API key | Let your application call PocketRelay |
+| Pocket Relay username and password | Sign in to the administration console |
+| Provider account or subscription token | Let Pocket Relay contact that provider |
+| Pocket Relay `sk-pr-…` API key | Let your application call Pocket Relay |
 
 Use a separate gateway key per application so you can revoke one independently. Gateway
 keys currently access all enabled accounts; they do not enforce model-specific permissions
@@ -160,10 +160,10 @@ In your application's OpenAI-compatible provider settings, enter:
 | Setting | Mac app | Docker |
 |---|---|---|
 | Base URL | `http://localhost:8788/v1` | `http://localhost:8787/v1` |
-| API key | Your `sk-cr-…` key | Your `sk-cr-…` key |
+| API key | Your `sk-pr-…` key | Your `sk-pr-…` key |
 | Model | Exact `account/model` identifier | Exact `account/model` identifier |
 
-Send a short message such as **Hello!**. Keep PocketRelay running while using the client.
+Send a short message such as **Hello!**. Keep Pocket Relay running while using the client.
 A bare model name such as `sonnet` is rejected by default. Requests do not silently switch
 to another account when the selected account is unavailable.
 
@@ -173,7 +173,7 @@ Python is only needed for that optional client example, not to run the Mac app.
 
 `localhost` means the machine or container running your client. If your client runs in a
 container on Docker Desktop, use `host.docker.internal` to reach a Mac-hosted app. Containers
-on the PocketRelay Compose network can use `http://customremote:8787/v1`. Remote-machine
+on the Pocket Relay Compose network can use `http://pocketrelay:8787/v1`. Remote-machine
 access requires a deliberately configured secure proxy; it is not exposed by default.
 
 ## Everyday use
@@ -201,15 +201,15 @@ stopped. Replacing the app preserves this directory. Docker uses a separate volu
 | Problem | What to check |
 |---|---|
 | App blocked on first launch | Follow the Gatekeeper steps above for the trusted downloaded package |
-| Service cannot start | Port 8788 may belong to another app; quit that app and restart PocketRelay |
-| Client gets connection refused | PocketRelay is running, the Mac is awake, and the port matches your installation |
-| Console password lost | Mac menu → Change password; Docker → `docker compose exec customremote customremote setup` |
-| API returns 401 | Use an active `sk-cr-…` key, not the console password or provider token |
+| Service cannot start | Port 8788 may belong to another app; quit that app and restart Pocket Relay |
+| Client gets connection refused | Pocket Relay is running, the Mac is awake, and the port matches your installation |
+| Console password lost | Mac menu → Change password; Docker → `docker compose exec pocketrelay pocketrelay setup` |
+| API returns 401 | Use an active `sk-pr-…` key, not the console password or provider token |
 | Model rejected | Copy the complete identifier from the model selector or account model list |
 | Provider test fails | Read the account error, check eligibility/credentials and reconnect if needed |
 | Quota reached | Wait for the provider reset; creating a new gateway key does not increase quota |
 | API key lost | Create a replacement and revoke the old key |
 
 For many users, virtual keys or budgets, [LiteLLM is an optional front gateway](../README.md#need-many-keys-litellm-is-optional).
-PocketRelay works by itself. Read [security](../SECURITY.md), [configuration](configuration.md)
+Pocket Relay works by itself. Read [security](../SECURITY.md), [configuration](configuration.md)
 and [macOS details](macos.md) before exposing the service beyond your computer.

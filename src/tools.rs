@@ -20,7 +20,7 @@ pub struct Installer {
 }
 impl Installer {
     pub fn configured() -> anyhow::Result<Option<Arc<Self>>> {
-        let path = crate::config::envs("REMOTE_MANAGED_TOOLS", "");
+        let path = crate::config::envs("POCKETRELAY_MANAGED_TOOLS", "");
         if path.is_empty() {
             return Ok(None);
         }

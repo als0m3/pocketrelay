@@ -56,7 +56,7 @@ async fn test(app: &Arc<App>, a: Value) -> Value {
     }
     let model = match p.as_str() {
         "claude" => "haiku".into(),
-        "antigravity" => config::envs("REMOTE_ANTIGRAVITY_FAST_MODEL", "gemini-3-flash"),
+        "antigravity" => config::envs("POCKETRELAY_ANTIGRAVITY_FAST_MODEL", "gemini-3-flash"),
         _ => app.catalog.lock().unwrap()["codex"]
             .as_array()
             .and_then(|v| v.first())

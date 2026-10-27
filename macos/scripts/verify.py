@@ -8,9 +8,9 @@ import tempfile
 app = Path(sys.argv[1]).resolve()
 resources = app / 'Contents/Resources'
 bindir = resources / 'bin'
-with tempfile.TemporaryDirectory(prefix='customremote-bundle-') as home:
+with tempfile.TemporaryDirectory(prefix='pocketrelay-bundle-') as home:
     env = {'HOME': home, 'PATH': str(bindir) + ':/usr/bin:/bin', 'LANG': 'en_US.UTF-8', 'DISABLE_AUTOUPDATER': '1'}
-    for tool in ['customremote', 'pdftotext', 'pdftoppm', 'pdfinfo']:
+    for tool in ['pocketrelay', 'pdftotext', 'pdftoppm', 'pdfinfo']:
         option = '-v' if tool.startswith('pdf') else '--version'
         result = subprocess.run([str(bindir / tool), option], env=env, capture_output=True, text=True, timeout=30)
         if result.returncode:

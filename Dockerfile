@@ -41,16 +41,16 @@ RUN curl -fsSL --retry 3 --retry-all-errors "https://github.com/google-antigravi
     && tar xzf /tmp/antigravity.tar.gz -C /usr/local/bin && rm /tmp/antigravity.tar.gz && antigravity --version
 
 WORKDIR /app
-COPY --from=build /build/target/release/customremote /usr/local/bin/customremote
+COPY --from=build /build/target/release/pocketrelay /usr/local/bin/pocketrelay
 COPY static ./static
 COPY LICENSE /usr/share/doc/pocketrelay/LICENSE
 
 # OpenShift: arbitrary UID in group 0; HOME and data must be group-writable
 RUN mkdir -p /data && chgrp -R 0 $HOME /data && chmod -R g=u $HOME /data
-ENV REMOTE_DATA=/data REMOTE_HOST=0.0.0.0 REMOTE_PORT=8787 REMOTE_ENABLE_SESSIONS=0 \
+ENV POCKETRELAY_DATA=/data POCKETRELAY_HOST=0.0.0.0 POCKETRELAY_PORT=8787 POCKETRELAY_ENABLE_SESSIONS=0 \
     DISABLE_AUTOUPDATER=1 CLAUDE_BIN=/usr/local/bin/claude \
     CODEX_BIN=/usr/local/bin/codex CODEX_HOME=/data/codex \
     ANTIGRAVITY_BIN=/usr/local/bin/antigravity ANTIGRAVITY_HOME=/data/antigravity
 USER 1001
 EXPOSE 8787
-CMD ["customremote", "serve"]
+CMD ["pocketrelay", "serve"]

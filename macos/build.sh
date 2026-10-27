@@ -14,7 +14,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/bin" "$app/Contents/Fram
 # Remap compiler paths so panic locations and metadata do not reveal the build machine.
 export CARGO_ENCODED_RUSTFLAGS="${CARGO_ENCODED_RUSTFLAGS:+${CARGO_ENCODED_RUSTFLAGS}$'\x1f'}--remap-path-prefix=$HOME=/build-home"$'\x1f'"--remap-path-prefix=$PWD=/src/pocketrelay"
 cargo build --release --locked
-cp target/release/customremote "$app/Contents/Resources/bin/"
+cp target/release/pocketrelay "$app/Contents/Resources/bin/"
 cp macos/Info.plist "$app/Contents/Info.plist"
 cp -R static "$app/Contents/Resources/"
 mkdir -p "$app/Contents/Resources/ThirdParty"

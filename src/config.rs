@@ -14,14 +14,21 @@ pub fn now() -> f64 {
         .unwrap_or_default()
         .as_secs_f64()
 }
+/// Reads a `POCKETRELAY_*` variable, falling back to its legacy `REMOTE_*` name.
+pub fn var(name: &str) -> Result<String, env::VarError> {
+    env::var(name).or_else(|e| {
+        name.strip_prefix("POCKETRELAY_")
+            .map_or(Err(e), |rest| env::var(format!("REMOTE_{rest}")))
+    })
+}
 pub fn envs(name: &str, default: &str) -> String {
-    env::var(name).unwrap_or_else(|_| default.into())
+    var(name).unwrap_or_else(|_| default.into())
 }
 pub fn flag(name: &str, default: bool) -> bool {
     envs(name, if default { "1" } else { "0" }) == "1"
 }
 pub fn number(name: &str, default: u64) -> u64 {
-    env::var(name)
+    var(name)
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(default)
@@ -73,8 +80,8 @@ pub fn load(path: &Path, default: Value) -> Result<Value> {
         Err(e) => Err(e.into()),
     }
 }
-fn secret(data: &Path, var: &str, file: &str) -> Result<String> {
-    if let Ok(v) = env::var(var) {
+fn secret(data: &Path, name: &str, file: &str) -> Result<String> {
+    if let Ok(v) = var(name) {
         if !v.is_empty() {
             return Ok(v);
         }
@@ -120,7 +127,8 @@ pub fn clean_env(full: bool) -> HashMap<String, String> {
     ];
     env::vars()
         .filter(|(k, _)| {
-            !k.starts_with("REMOTE_")
+            !k.starts_with("POCKETRELAY_")
+                && !k.starts_with("REMOTE_")
                 && (full
                     || keep.contains(&k.to_uppercase().as_str())
                     || ["LC_", "XDG_", "CLAUDE_", "ANTHROPIC_", "CODEX_"]
@@ -129,7 +137,7 @@ pub fn clean_env(full: bool) -> HashMap<String, String> {
         })
         .filter(|(k, _)| {
             (full || !["OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"].contains(&k.as_str()))
-                && (k != "ANTHROPIC_API_KEY" || flag("REMOTE_KEEP_API_KEY", false))
+                && (k != "ANTHROPIC_API_KEY" || flag("POCKETRELAY_KEEP_API_KEY", false))
         })
         .collect()
 }
@@ -164,10 +172,10 @@ impl Config {
         Ok(())
     }
     pub fn read() -> Result<Self> {
-        let data = expand(&envs("REMOTE_DATA", "data"));
+        let data = expand(&envs("POCKETRELAY_DATA", "data"));
         std::fs::create_dir_all(&data)?;
         let data = data.canonicalize()?;
-        let public_url = envs("REMOTE_PUBLIC_URL", "")
+        let public_url = envs("POCKETRELAY_PUBLIC_URL", "")
             .trim_end_matches('/')
             .to_owned();
         let mut allowed_hosts = vec![
@@ -177,7 +185,7 @@ impl Config {
             "host.docker.internal".into(),
         ];
         allowed_hosts.extend(
-            envs("REMOTE_ALLOWED_HOSTS", "")
+            envs("POCKETRELAY_ALLOWED_HOSTS", "")
                 .split(',')
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| s.trim().to_string()),
@@ -187,12 +195,12 @@ impl Config {
                 allowed_hosts.push(h.into());
             }
         }
-        let codex = if flag("REMOTE_ENABLE_CODEX", true) {
+        let codex = if flag("POCKETRELAY_ENABLE_CODEX", true) {
             binary("CODEX_BIN", "codex")
         } else {
             String::new()
         };
-        let antigravity = if flag("REMOTE_ENABLE_ANTIGRAVITY", true) {
+        let antigravity = if flag("POCKETRELAY_ENABLE_ANTIGRAVITY", true) {
             binary("ANTIGRAVITY_BIN", "antigravity")
         } else {
             String::new()
@@ -200,15 +208,15 @@ impl Config {
         let managed_tools = crate::tools::Installer::configured()?;
         let mut config = Self {
             managed_tools,
-            token: secret(&data, "REMOTE_TOKEN", "token")?,
-            session_secret: secret(&data, "REMOTE_SESSION_SECRET", "session_secret")?,
+            token: secret(&data, "POCKETRELAY_TOKEN", "token")?,
+            session_secret: secret(&data, "POCKETRELAY_SESSION_SECRET", "session_secret")?,
             data,
-            static_dir: expand(&envs("REMOTE_STATIC", "static")),
-            host: envs("REMOTE_HOST", "127.0.0.1"),
-            port: number("REMOTE_PORT", 8787).try_into()?,
-            sessions: flag("REMOTE_ENABLE_SESSIONS", true),
-            docs: flag("REMOTE_ENABLE_DOCS", public_url.is_empty()),
-            secure: flag("REMOTE_HTTPS", false),
+            static_dir: expand(&envs("POCKETRELAY_STATIC", "static")),
+            host: envs("POCKETRELAY_HOST", "127.0.0.1"),
+            port: number("POCKETRELAY_PORT", 8787).try_into()?,
+            sessions: flag("POCKETRELAY_ENABLE_SESSIONS", true),
+            docs: flag("POCKETRELAY_ENABLE_DOCS", public_url.is_empty()),
+            secure: flag("POCKETRELAY_HTTPS", false),
             public_url,
             allowed_hosts,
             claude: {
@@ -221,21 +229,21 @@ impl Config {
             },
             codex,
             antigravity,
-            system_accounts: envs("REMOTE_SYSTEM_ACCOUNTS", "claude,codex,antigravity")
+            system_accounts: envs("POCKETRELAY_SYSTEM_ACCOUNTS", "claude,codex,antigravity")
                 .split(',')
                 .filter(|s| ["claude", "codex", "antigravity"].contains(s))
                 .map(String::from)
                 .collect(),
-            require_account: flag("REMOTE_REQUIRE_ACCOUNT", true),
-            request_timeout: number("REMOTE_REQUEST_TIMEOUT", 600),
-            max_concurrency: number("REMOTE_MAX_CONCURRENCY", 6) as usize,
+            require_account: flag("POCKETRELAY_REQUIRE_ACCOUNT", true),
+            request_timeout: number("POCKETRELAY_REQUEST_TIMEOUT", 600),
+            max_concurrency: number("POCKETRELAY_MAX_CONCURRENCY", 6) as usize,
         };
         if let Some(tools) = &config.managed_tools {
             config.claude = tools.binary("claude");
-            if flag("REMOTE_ENABLE_CODEX", true) {
+            if flag("POCKETRELAY_ENABLE_CODEX", true) {
                 config.codex = tools.binary("codex");
             }
-            if flag("REMOTE_ENABLE_ANTIGRAVITY", true) {
+            if flag("POCKETRELAY_ENABLE_ANTIGRAVITY", true) {
                 config.antigravity = tools.binary("antigravity");
             }
         }

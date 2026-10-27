@@ -1,6 +1,6 @@
 # Third-party components
 
-The repository's MIT license covers original PocketRelay code, not the services or every
+The repository's MIT license covers original Pocket Relay code, not the services or every
 tool it invokes. Provider names identify integrations and do not imply affiliation.
 
 - Rust dependencies: exact versions in `Cargo.lock`, each with its own license.

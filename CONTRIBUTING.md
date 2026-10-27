@@ -27,7 +27,6 @@ cargo run --release --locked -- setup
 
 The script selects the personal profile, without sessions or inherited system accounts.
 Install the provider CLIs and PDF tools separately; see [configuration](docs/configuration.md).
-`customremote` remains the internal crate and binary name; the product is called PocketRelay.
 
 ## Before committing
 

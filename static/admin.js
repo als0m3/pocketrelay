@@ -1,6 +1,6 @@
 import { changed, reconcile, cachedNode } from "./admin-view.js";
 "use strict";
-const desktop = window.webkit?.messageHandlers?.customremote;
+const desktop = window.webkit?.messageHandlers?.pocketrelay;
 const nativeAction = (action, extra = {}) => desktop?.postMessage({ action, ...extra });
 if (desktop) {
   document.querySelector(".login-help").replaceChildren(
@@ -324,7 +324,7 @@ async function testAccount(a, btn) {
   try {
     if (!await ensureTool(a.provider)) return;
     const r = await call(`/admin/api/accounts/${a.id}/test`, "POST");
-    r.ok ? toast(`✓ ${a.label}: ${r.reply} in ${r.seconds} s (${r.model})`) : toast(`✗ ${a.label} : ${r.error}`, true);
+    r.ok ? toast(`✓ ${a.label}: ${r.reply} in ${Number(r.seconds).toFixed(1)} s (${r.model})`) : toast(`✗ ${a.label}: ${r.error}`, true);
   } catch (e) { toast(e.message, true); }
   finally { btn.disabled = false; btn.lastChild.textContent = old; refresh(); }
 }
@@ -478,7 +478,7 @@ function renderAddForm() {
       h("ol", { class: "steps" },
         h("li", {}, desktop ? "Open the Claude setup assistant, then sign in through your browser:" : "Generate a token from a terminal in the project directory:",
           desktop ? h("button", { class: "btn", type: "button", onclick: () => act(async () => { if (await ensureTool("claude")) nativeAction("claudeToken"); }) }, "Connect Claude on this Mac") :
-          h("div", { class: "cmd" }, h("code", {}, "docker compose exec customremote claude setup-token"), h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy("docker compose exec customremote claude setup-token") }, icon("copy"))),
+          h("div", { class: "cmd" }, h("code", {}, "docker compose exec pocketrelay claude setup-token"), h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy("docker compose exec pocketrelay claude setup-token") }, icon("copy"))),
           h("p", { class: "hint" }, desktop ? "Terminal opens automatically. Copy the generated token and paste it below." : "Without Docker, on a machine with the CLI installed: claude setup-token.")),
         h("li", {}, "Paste the displayed token (it starts with sk-ant-):")),
       h("label", { class: "field" }, h("span", {}, "Token"), tok),
@@ -569,8 +569,8 @@ function commandStep(account, command) {
     h("div", { class: "cmd" }, h("code", {}, command),
       h("button", { class: "btn ghost icon", type: "button", title: "Copy", onclick: () => copy(command) }, icon("copy"))),
     h("p", { class: "hint" }, "With Docker Compose, run this command from the project directory:"),
-    h("div", { class: "cmd" }, h("code", {}, `docker compose exec customremote ${command}`),
-      h("button", { class: "btn ghost icon", title: "Copy Docker command", onclick: () => copy(`docker compose exec customremote ${command}`) }, icon("copy"))),
+    h("div", { class: "cmd" }, h("code", {}, `docker compose exec pocketrelay ${command}`),
+      h("button", { class: "btn ghost icon", title: "Copy Docker command", onclick: () => copy(`docker compose exec pocketrelay ${command}`) }, icon("copy"))),
     h("p", { style: "color:var(--text-2)" }, "Once signed in, return here and select Test."));
   $("#add-foot").replaceChildren(h("button", { class: "btn primary", onclick: () => $("#dlg-add").close() }, "Done"));
 }
@@ -624,7 +624,7 @@ function snippet() {
   return {
     python: `from openai import OpenAI\n\nclient = OpenAI(base_url=${JSON.stringify(base)}, api_key=${JSON.stringify(k)})\nr = client.chat.completions.create(\n    model=${JSON.stringify(model)},\n    messages=[{"role": "user", "content": "Hello!"}],\n)\nprint(r.choices[0].message.content)`,
     curl: `curl ${shellQuote(base + "/chat/completions")} \\\n  -H ${shellQuote("Authorization: Bearer " + k)} \\\n  -H 'Content-Type: application/json' \\\n  -d ${shellQuote(payload)}`,
-    owui: `Admin settings → Connections → OpenAI API\n  URL: ${base}\n  Key: ${k}\n  Model: ${model}\n\nIn a container on the same Compose network:\n  URL: http://customremote:8787/v1`,
+    owui: `Admin settings → Connections → OpenAI API\n  URL: ${base}\n  Key: ${k}\n  Model: ${model}\n\nIn a container on the same Compose network:\n  URL: http://pocketrelay:8787/v1`,
   }[snipTab];
 }
 $("#snip-tabs").onclick = e => {
