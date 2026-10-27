@@ -51,7 +51,7 @@ Node.js or LiteLLM installation is required. The macOS app works without Docker 
 the same console. Each installation keeps its own data.
 
 **Mac app preview:** download the Apple Silicon DMG from the
-[v0.3.1 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.3.1).
+[v0.4.0 release](https://github.com/als0m3/pocketrelay/releases/tag/v0.4.0).
 It uses an ad hoc signature, without an Apple Developer ID or notarization; macOS requires
 manual approval on first launch. No Intel DMG or App Store version is provided in this release.
 
