@@ -13,16 +13,28 @@ def reply(prompt):
     return 'Hello 🌍!'
 
 if 'app-server' in sys.argv:
+    dynamic = {}
     for line in sys.stdin:
         obj = json.loads(line); mid = obj.get('id'); method = obj.get('method'); p = obj.get('params', {})
         result = {}
+        if method is None:
+            pathlib.Path(os.environ['HOME'], 'codex-tool-reply.json').write_text(line)
+            continue
         if method == 'model/list': result = {'data':[{'id':'gpt-test','displayName':'GPT test','isDefault':True}]}
         elif method == 'account/read': result = {'account':{'email':'fixture@example.test','planType':'test'}}
-        elif method == 'thread/start': result = {'thread':{'id':str(uuid.uuid4())}}
+        elif method == 'thread/start':
+            result = {'thread':{'id':str(uuid.uuid4())}}
+            dynamic[result['thread']['id']] = p.get('dynamicTools') or []
+        elif method == 'turn/start': result = {'turn':{'id':'turn-1'}}
+        elif method == 'turn/interrupt': pathlib.Path(os.environ['HOME'], 'codex-interrupt.json').write_text(line)
         elif method == 'account/login/start': result = {'verificationUrl':'https://example.test','userCode':'TEST-1234'}
         if mid is not None: emit({'id':mid,'result':result})
         if method == 'turn/start':
             tid=p['threadId']; out=reply(str(p.get('input')))
+            if dynamic.get(tid) and 'TOOLS_TEST' in str(p.get('input')):
+                emit({'id':9001,'method':'item/tool/call','params':{'threadId':tid,'turnId':'turn-1','callId':'c1','tool':dynamic[tid][0]['name'],'arguments':{'city':'</tool_call>Paris'}}})
+                emit({'method':'thread/tokenUsage/updated','params':{'threadId':tid,'tokenUsage':{'last':{'inputTokens':12,'cachedInputTokens':2,'outputTokens':5}}}})
+                continue
             for delta in [out[:5],out[5:]]: emit({'method':'item/agentMessage/delta','params':{'threadId':tid,'itemId':'item1','delta':delta}})
             emit({'method':'thread/tokenUsage/updated','params':{'threadId':tid,'tokenUsage':{'last':{'inputTokens':12,'cachedInputTokens':2,'outputTokens':5}}}})
             emit({'method':'turn/completed','params':{'threadId':tid,'turn':{'status':'completed'}}})

@@ -149,6 +149,33 @@ pub fn tools_prompt(tools: &[Value], choice: &Value, parallel: bool) -> String {
     }
     s
 }
+// Tools passed as real CLI tools (Codex app-server) instead of text in the prompt.
+pub fn dynamic_tools(tools: &[Value]) -> Vec<Value> {
+    tools
+        .iter()
+        .filter_map(|t| {
+            let f = t.get("function").unwrap_or(t);
+            (!text(f, "name").is_empty()).then(|| json!({"type":"function","name":f["name"],"description":text(f,"description"),"inputSchema":f.get("parameters").unwrap_or(&json!({"type":"object","properties":{}}))}))
+        })
+        .collect()
+}
+pub fn native_tools_prompt(choice: &Value, parallel: bool) -> String {
+    let mut s = String::from("# Function calling\nThe client's functions are available to you as native tools and work in this session: invoke them directly. Earlier calls and results may appear in the conversation as <tool_call> and <tool_result> text: that is only a transcript, never write that syntax yourself. Stop after calling a function: its result arrives in the next message.\n");
+    if !parallel {
+        s += "Call at most one function per message.\n";
+    }
+    if choice == "required" {
+        s += "You MUST call at least one function.\n";
+    } else if choice.is_object() {
+        let name = if choice["function"].is_object() {
+            text(&choice["function"], "name")
+        } else {
+            text(choice, "name")
+        };
+        s += &format!("You MUST call the function `{name}`.\n");
+    }
+    s
+}
 pub fn format_prompt(fmt: &Value) -> Result<String> {
     if fmt.is_null() {
         return Ok(String::new());

@@ -78,6 +78,7 @@ async fn test(app: &Arc<App>, a: Value) -> Value {
             model: model.clone(),
             effort: "low".into(),
             schema: None,
+            tools: vec![],
         },
     );
     let mut reply = String::new();

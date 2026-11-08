@@ -35,6 +35,11 @@ pub struct Prompt {
     pub model: String,
     pub effort: String,
     pub schema: Option<Value>,
+    pub tools: Vec<Value>,
+}
+// Answers a function call the relay handed to the API client: the CLI turn stops here.
+fn tool_reply(id: &Value) -> Value {
+    json!({"id":id,"result":{"contentItems":[{"type":"inputText","text":"Forwarded to the API client."}],"success":false}})
 }
 pub fn classify(message: &str) -> Error {
     let low = message.to_lowercase();
@@ -220,6 +225,18 @@ impl CodexPool {
                         continue;
                     }
                 }
+                if v.get("id").is_some() && text(&v, "method") == "item/tool/call" {
+                    let forwarded = reader
+                        .threads
+                        .lock()
+                        .unwrap()
+                        .get(text(&v["params"], "threadId"))
+                        .is_some_and(|tx| tx.try_send(v.clone()).is_ok());
+                    if !forwarded {
+                        let _ = reader.write(&tool_reply(&v["id"])).await;
+                    }
+                    continue;
+                }
                 if v.get("id").is_some() {
                     let _ = reader
                         .write(&json!({"id":v["id"],"result":{"decision":"decline"}}))
@@ -249,7 +266,7 @@ impl CodexPool {
         if let Err(e) = srv
             .call(
                 "initialize",
-                json!({"clientInfo":{"name":"pocketrelay","version":"0.2.0"}}),
+                json!({"clientInfo":{"name":"pocketrelay","version":"0.2.0"},"capabilities":{"experimentalApi":true}}),
             )
             .await
         {
@@ -329,6 +346,7 @@ impl Codex {
 struct ThreadGuard {
     srv: Arc<Codex>,
     id: String,
+    turn: String,
     finished: bool,
 }
 impl Drop for ThreadGuard {
@@ -336,12 +354,13 @@ impl Drop for ThreadGuard {
         self.srv.threads.lock().unwrap().remove(&self.id);
         let s = self.srv.clone();
         let id = self.id.clone();
+        let turn = self.turn.clone();
         let finished = self.finished;
         tokio::spawn(async move {
-            if !finished {
+            if !finished && !turn.is_empty() {
                 let _ = tokio::time::timeout(
                     Duration::from_secs(5),
-                    s.call("turn/interrupt", json!({"threadId":id})),
+                    s.call("turn/interrupt", json!({"threadId":id,"turnId":turn})),
                 )
                 .await;
             }
@@ -447,7 +466,11 @@ pub fn stream(app: Arc<App>, account: Value, p: Prompt) -> Output {
             let blocks = crate::content::expand_documents(p.blocks).await?;
             let inputs:Vec<Value>=blocks.into_iter().filter_map(|b|match text(&b,"type"){"text"=>Some(json!({"type":"text","text":b["text"]})),"image"=>Some(json!({"type":"image","url":format!("data:{};base64,{}",text(&b["source"],"media_type"),text(&b["source"],"data")),"detail":b.get("detail").unwrap_or(&json!("auto"))})),_=>None}).collect();
             let cwd = app.config.data.join("codex-cwd");
-            let r=srv.call("thread/start",json!({"baseInstructions":p.system,"ephemeral":true,"sandbox":"read-only","approvalPolicy":"never","cwd":cwd,"model":p.model})).await?;
+            let mut start=json!({"baseInstructions":p.system,"ephemeral":true,"sandbox":"read-only","approvalPolicy":"never","cwd":cwd,"model":p.model});
+            if !p.tools.is_empty() {
+                start["dynamicTools"] = json!(p.tools);
+            }
+            let r=srv.call("thread/start",start).await?;
             let tid = text(&r["thread"], "id").to_string();
             if tid.is_empty() {
                 Err(Error::new(502, "Codex did not return a thread"))?;
@@ -457,6 +480,7 @@ pub fn stream(app: Arc<App>, account: Value, p: Prompt) -> Output {
             let mut guard = ThreadGuard {
                 srv: srv.clone(),
                 id: tid.clone(),
+                turn: String::new(),
                 finished: false,
             };
             let mut params = json!({"threadId":tid,"input":inputs,"model":p.model});
@@ -470,12 +494,32 @@ pub fn stream(app: Arc<App>, account: Value, p: Prompt) -> Output {
             if let Some(schema) = p.schema {
                 params["outputSchema"] = schema;
             }
-            srv.call("turn/start", params).await?;
+            let started = srv.call("turn/start", params).await?;
+            guard.turn = text(&started["turn"], "id").to_string();
             let mut usage = json!({});
             let mut last_item = String::new();
-            while let Some(v) = rx.recv().await {
+            let mut calls: Vec<Value> = vec![];
+            let mut calls_deadline = None;
+            loop {
+                let next = match calls_deadline {
+                    Some(d) => match tokio::time::timeout_at(d, rx.recv()).await {
+                        Ok(v) => v,
+                        Err(_) => break,
+                    },
+                    None => rx.recv().await,
+                };
+                let Some(v) = next else { break };
                 let params = &v["params"];
                 match text(&v, "method") {
+                    // Native call: same text form as the prompt protocol, so every endpoint parses it alike.
+                    // '<' is escaped so an argument cannot close the block.
+                    "item/tool/call" => {
+                        let call = serde_json::to_string(&json!({"name":params["tool"],"arguments":params["arguments"]}))?.replace('<', "\\u003c");
+                        calls.push(v["id"].clone());
+                        calls_deadline.get_or_insert(tokio::time::Instant::now() + Duration::from_millis(1500));
+                        yield Event::Text(format!("<tool_call>\n{call}\n</tool_call>\n"));
+                    }
+                    "item/agentMessage/delta" if !calls.is_empty() => {}
                     "item/agentMessage/delta" => {
                         let item = text(params, "itemId");
                         if !last_item.is_empty() && item != last_item {
@@ -488,6 +532,10 @@ pub fn stream(app: Arc<App>, account: Value, p: Prompt) -> Output {
                         let u = &params["tokenUsage"]["last"];
                         let cached = u["cachedInputTokens"].as_u64().unwrap_or(0);
                         usage = json!({"input_tokens":u["inputTokens"].as_u64().unwrap_or(0).saturating_sub(cached),"cache_read_input_tokens":cached,"output_tokens":u["outputTokens"].as_u64().unwrap_or(0),"output_tokens_details":{"thinking_tokens":u["reasoningOutputTokens"].as_u64().unwrap_or(0)}});
+                        // Usage closes a model response: every call of this response has been seen.
+                        if !calls.is_empty() {
+                            break;
+                        }
                     }
                     "error" if params["willRetry"] != true => {
                         Err(classify(&params["error"].to_string()))?;
@@ -502,7 +550,10 @@ pub fn stream(app: Arc<App>, account: Value, p: Prompt) -> Output {
                     _ => {}
                 }
             }
-            if !guard.finished {
+            for id in &calls {
+                let _ = srv.write(&tool_reply(id)).await;
+            }
+            if !guard.finished && calls.is_empty() {
                 Err(Error::new(502, "Codex stream interrupted or client too slow"))?;
             }
             {

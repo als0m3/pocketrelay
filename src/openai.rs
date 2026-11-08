@@ -406,11 +406,17 @@ fn request_prompt(
     fmt: &Value,
     schema: Option<Value>,
     response: bool,
+    native_tools: bool,
 ) -> Result<(Prompt, bool)> {
     let use_tools = !tools.is_empty() && choice != "none";
     let extras = [
         if use_tools {
-            prompt::tools_prompt(tools, choice, body["parallel_tool_calls"] != false)
+            let parallel = body["parallel_tool_calls"] != false;
+            if native_tools {
+                prompt::native_tools_prompt(choice, parallel)
+            } else {
+                prompt::tools_prompt(tools, choice, parallel)
+            }
         } else {
             String::new()
         },
@@ -429,6 +435,11 @@ fn request_prompt(
             model: String::new(),
             effort: effort.into(),
             schema,
+            tools: if use_tools && native_tools {
+                prompt::dynamic_tools(tools)
+            } else {
+                vec![]
+            },
         },
         use_tools,
     ))
@@ -473,7 +484,7 @@ async fn chat(app: Arc<App>, model: Model, body: Value, n: usize) -> Result<Resp
     let c = prompt::chat(&body["messages"]).await?;
     let (tools, choice) = prompt::tools(&body)?;
     let (fmt, schema, json_mode) = format_parts(&body, false)?;
-    let (p, use_tools) = request_prompt(&c, &body, &tools, &choice, &fmt, schema, false)?;
+    let (p, use_tools) = request_prompt(&c, &body, &tools, &choice, &fmt, schema, false, model.provider == "codex")?;
     let stops = prompt::stops(&body["stop"])?;
     let cid = id("chatcmpl-");
     let created = now() as u64;
@@ -514,7 +525,7 @@ async fn completion(app: Arc<App>, model: Model, body: Value) -> Result<Response
     } else {
         return Err(Error::new(400, "prompt must be a string or list"));
     };
-    let p=Prompt{system:"You are a raw text completion engine. Output only the direct continuation of the user's text, with no preamble, quotes or commentary.".into(),blocks:vec![json!({"type":"text","text":prompt})],model:String::new(),effort:String::new(),schema:None};
+    let p=Prompt{system:"You are a raw text completion engine. Output only the direct continuation of the user's text, with no preamble, quotes or commentary.".into(),blocks:vec![json!({"type":"text","text":prompt})],model:String::new(),effort:String::new(),schema:None,tools:vec![]};
     let stops = prompt::stops(&body["stop"])?;
     let echo = if body["echo"] == true {
         prompt
@@ -628,7 +639,7 @@ async fn responses(app: Arc<App>, model: Model, body: Value, owner: String) -> R
     }
     let (tools, choice) = prompt::tools(&body)?;
     let (fmt, schema, json_mode) = format_parts(&body, true)?;
-    let (p, use_tools) = request_prompt(&c, &body, &tools, &choice, &fmt, schema, true)?;
+    let (p, use_tools) = request_prompt(&c, &body, &tools, &choice, &fmt, schema, true, model.provider == "codex")?;
     let rid = id("resp_");
     let msg_id = id("msg_");
     let base = json!({"id":rid,"object":"response","created_at":now() as u64,"status":"in_progress","model":model.public,"output":[],"error":null,"incomplete_details":null,"instructions":body["instructions"],"max_output_tokens":body["max_output_tokens"],"parallel_tool_calls":body.get("parallel_tool_calls").unwrap_or(&json!(true)),"previous_response_id":body["previous_response_id"],"reasoning":body.get("reasoning").unwrap_or(&json!({"effort":null,"summary":null})),"store":body.get("store").unwrap_or(&json!(true)),"temperature":body.get("temperature").unwrap_or(&json!(1.0)),"text":body.get("text").unwrap_or(&json!({"format":{"type":"text"}})),"tool_choice":choice,"tools":tools,"top_p":body.get("top_p").unwrap_or(&json!(1.0)),"truncation":"disabled","usage":null,"user":body["user"],"metadata":body.get("metadata").unwrap_or(&json!({}))});

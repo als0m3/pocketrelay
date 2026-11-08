@@ -59,6 +59,9 @@ with tempfile.TemporaryDirectory(prefix='customremote-integration-') as tmp:
         b={'model':'system-claude/haiku','messages':[{'role':'user','content':'TOOLS_TEST'}],'tools':[{'type':'function','function':{'name':'weather','parameters':{'type':'object'}}}]}
         out=req('/v1/chat/completions','POST',b,key=key)[0]
         verify(out['choices'][0]['message']['tool_calls'][0]['function']['name']=='weather','tool calls')
+        out=req('/v1/chat/completions','POST',{**b,'model':'system-codex/gpt-test'},key=key)[0]
+        call=out['choices'][0]['message']['tool_calls'][0]['function']
+        verify(call['name']=='weather' and json.loads(call['arguments'])=={'city':'</tool_call>Paris'} and out['choices'][0]['finish_reason']=='tool_calls','Codex native tool call')
         out=req('/v1/chat/completions','POST',{'model':'system-claude/haiku','messages':[{'role':'user','content':'JSON_TEST'}],'response_format':{'type':'json_object'}},key=key)[0]
         verify(json.loads(out['choices'][0]['message']['content'])=={'ok':True},'JSON mode')
         b={'model':'system-claude/haiku','messages':[{'role':'user','content':'Hello'}],'n':3}
