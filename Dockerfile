@@ -26,8 +26,8 @@ RUN mkdir -p $HOME && curl -fsSL --retry 3 --retry-all-errors "https://downloads
     && chmod 755 /usr/local/bin/claude && claude --version
 
 # Codex CLI (ChatGPT subscription), static musl binary
-ARG CODEX_VERSION=0.155.1
-ARG CODEX_SHA256=a0ef8b2debc3bf747e07b1a039354de31300ac0dcc2276498ba281470b5d9115
+ARG CODEX_VERSION=0.167.0
+ARG CODEX_SHA256=9d64836106d5b374e90ee4454c7ebcde7ca7106558bd7e41a34b9f26ebda251a
 RUN curl -fsSL --retry 3 --retry-all-errors "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-x86_64-unknown-linux-musl.tar.gz" -o /tmp/codex.tar.gz \
     && echo "${CODEX_SHA256}  /tmp/codex.tar.gz" | sha256sum -c - \
     && tar xzf /tmp/codex.tar.gz -C /tmp && mv /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex \
