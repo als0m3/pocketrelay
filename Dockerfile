@@ -33,6 +33,13 @@ RUN curl -fsSL --retry 3 --retry-all-errors "https://github.com/openai/codex/rel
     && tar xzf /tmp/codex.tar.gz -C /tmp && mv /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex \
     && rm /tmp/codex.tar.gz && codex --version
 
+# Code Mode host: GPT-6 models reach every tool through it; without it they cannot call any tool
+ARG CODEX_CODE_MODE_HOST_SHA256=9fd083743af55be818aceb351d371fb5136f5b6aa3938f167087373d27067b2d
+RUN curl -fsSL --retry 3 --retry-all-errors "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz" -o /tmp/codex-host.tar.gz \
+    && echo "${CODEX_CODE_MODE_HOST_SHA256}  /tmp/codex-host.tar.gz" | sha256sum -c - \
+    && tar xzf /tmp/codex-host.tar.gz -C /tmp && mv /tmp/codex-code-mode-host-x86_64-unknown-linux-musl /usr/local/bin/codex-code-mode-host \
+    && chmod 755 /usr/local/bin/codex-code-mode-host && rm /tmp/codex-host.tar.gz
+
 # Antigravity CLI (Google AI subscription): standalone Go binary replacing the Gemini CLI
 ARG ANTIGRAVITY_VERSION=1.2.10
 ARG ANTIGRAVITY_SHA256=77cb69251292aa35b0b662f91f704f06dd787b72f7902a62db8c6d692989203e
